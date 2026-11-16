@@ -94,9 +94,28 @@ type opts struct {
 	direct bool     // run the fake server without the proxy (control experiment)
 	flags  []string // extra proxy flags
 	env    []string // extra environment for the server
+	// upstream, if set, runs the proxy in HTTP mode against this URL
+	// instead of starting the fake stdio server.
+	upstream string
 }
 
 func start(t *testing.T, o opts) *proc {
+	t.Helper()
+	p := startRaw(t, o)
+	p.send(`{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}`)
+	p.recv()
+	p.send(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	return p
+}
+
+// runProxy runs the proxy to completion with stdin closed.
+func runProxy(args ...string) (string, error) {
+	out, err := exec.Command(proxyBin, args...).CombinedOutput()
+	return string(out), err
+}
+
+// startRaw starts the process without initializing the session.
+func startRaw(t *testing.T, o opts) *proc {
 	t.Helper()
 	dir := t.TempDir()
 	p := &proc{t: t, lines: make(chan string, 256), stderr: &lockedBuf{},
@@ -105,7 +124,11 @@ func start(t *testing.T, o opts) *proc {
 		p.cmd = exec.Command(fakeBin)
 	} else {
 		args := append([]string{"--policy", policyPath, "--audit", p.auditPath, "--ask-mode", "deny", "--session-id", t.Name()}, o.flags...)
-		args = append(args, "--", fakeBin)
+		if o.upstream != "" {
+			args = append(args, "--upstream", o.upstream)
+		} else {
+			args = append(args, "--", fakeBin)
+		}
 		p.cmd = exec.Command(proxyBin, args...)
 	}
 	p.cmd.Env = append(append(os.Environ(), "FAKEMCP_LOG="+p.execLog), o.env...)
@@ -149,9 +172,6 @@ func start(t *testing.T, o opts) *proc {
 			t.Errorf("process did not exit; stderr:\n%s", p.stderr.String())
 		}
 	})
-	p.send(`{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}`)
-	p.recv()
-	p.send(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	return p
 }
 

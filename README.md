@@ -1,7 +1,7 @@
 # ifcproxy
 
-A stdio MCP proxy that blocks the **lethal trifecta** deterministically: private data, untrusted content and an external channel in one agent session.
-- It sits between an MCP client and an MCP server.
+An MCP proxy that blocks the **lethal trifecta** deterministically: private data, untrusted content and an external channel in one agent session.
+- It sits between an MCP client and an MCP server: a local server it starts (stdio), or a remote one (Streamable HTTP).
 - It labels the session from tool results (`untrusted`, `private`).
 - It decides every `tools/call` with a YAML policy **before** the server sees it.
 - No LLM classifiers, no heuristics: the same session and call always get the same decision.
@@ -70,6 +70,43 @@ Wrap the server command in any client that uses the usual `mcpServers` JSON (Cla
 }
 ```
 
+### Remote servers (Streamable HTTP)
+
+For a server that is reached by URL, give `--upstream` instead of a command. The client still starts ifcproxy as a local stdio server:
+
+```json
+{
+  "mcpServers": {
+    "deepwiki": {
+      "command": "/usr/local/bin/ifcproxy",
+      "args": [
+        "--policy", "/home/me/.config/ifcproxy/deepwiki.yaml",
+        "--session-file", "/home/me/.local/state/ifcproxy/session",
+        "--ask-mode", "deny",
+        "--upstream", "https://mcp.deepwiki.com/mcp"
+      ]
+    },
+    "tracker": {
+      "command": "/usr/local/bin/ifcproxy",
+      "args": [
+        "--policy", "/home/me/.config/ifcproxy/tracker.yaml",
+        "--session-file", "/home/me/.local/state/ifcproxy/session",
+        "--ask-mode", "deny",
+        "--upstream", "https://mcp.tracker.example/mcp",
+        "--header", "Authorization: Bearer ${TRACKER_TOKEN}"
+      ],
+      "env": {"TRACKER_TOKEN": "…"}
+    }
+  }
+}
+```
+
+- **`--header` takes `${VAR}` from the environment.** Tokens then stay out of the command line. Headers are never logged.
+- **Clear text only on loopback.** The URL must be `https`, or `http` on a loopback address. Redirects are not followed.
+- **Every argument to a remote server leaves the machine.** Declare remote tools `sink: external` even when they only read (see [`examples/servers/deepwiki.yaml`](examples/servers/deepwiki.yaml)).
+- **No built-in OAuth.** For servers that require an OAuth browser login, wrap a stdio bridge instead: `ifcproxy --policy p.yaml -- npx -y mcp-remote https://…/mcp`.
+- **The client must not also have the URL.** If it can reach the server directly, the proxy is bypassed.
+
 - **Give every server its own policy file.** Tools are matched by name only. Starting points for the official servers (filesystem, fetch, memory, everything) and a remote one (DeepWiki) are in [`examples/servers/`](examples/servers/).
 - **Wrap every server with the same `--session-file`.** Otherwise each proxy has its own session, and a trifecta spread across servers goes undetected. Delete the file to start a new session.
 - **GUI clients have no terminal for confirmations.** Use `--ask-mode deny` (or `allow`) explicitly with them. The default `tty` asks on the controlling terminal and denies when there is none.
@@ -119,6 +156,8 @@ rules:                           # first match wins; `when` = all labels present
 | `--session-id` | random | session id in audit records |
 | `--max-message-bytes` | 16 MiB | per-message limit |
 | `--max-pending` | 4096 | in-flight request limit |
+| `--upstream` | | MCP server URL (Streamable HTTP) instead of a server command |
+| `--header` | | upstream HTTP header `"Name: value"`, repeatable; `${VAR}` reads the environment |
 | `--version` | | print the version and exit |
 
 Audit record example:
@@ -137,7 +176,7 @@ Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) before relying on this. The shor
 - **It cannot see the model.** Taint is per session, not per value. Expect over-blocking once both labels are present; there is no declassification.
 - **Harm that needs no sink is not stopped** (deleting files, for example) unless you write per-tool rules for it.
 - **Cross-server trifectas need `--session-file`.** Without it, each proxy guards only its own server.
-- **stdio only.** ifcproxy does not speak Streamable HTTP itself. Remote servers work through a stdio bridge: `ifcproxy --policy p.yaml -- npx -y mcp-remote https://example.com/mcp` (tested with DeepWiki; details in [REAL_SERVERS](docs/REAL_SERVERS.md#remote-servers-through-mcp-remote)). The client is trusted: anything that starts the server without the proxy bypasses it.
+- **No OAuth of its own, no legacy HTTP+SSE transport.** OAuth servers work through `mcp-remote` (see above). The client is trusted: anything that starts or reaches the server without the proxy bypasses it.
 
 ## Development
 

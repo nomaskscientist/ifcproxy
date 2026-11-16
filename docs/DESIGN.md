@@ -52,3 +52,10 @@ Allowed `tools/call` messages and all other messages are forwarded **byte-for-by
 - `-race` needs cgo. On this Windows host without gcc it ran under WSL/Linux; CI runs it on Linux and macOS.
 
 **Process lifecycle.** The server starts in its own process group (Unix) and is killed as a tree (`kill(-pgid)`; `taskkill /T` on Windows), because launchers such as npx and uvx start the real server as a child. If the server's output is still open 2 s after a kill (orphans out of reach), the proxy exits anyway rather than hang the client.
+
+**Streamable HTTP (`--upstream`).** `internal/streamhttp` is the client side of the transport, shaped like a stdio server. The proxy writes lines to it and reads lines from it, so the proxy core is unchanged: every message it emits, including errors it synthesises, goes through the same server loop and labelling. Details:
+- **Ordering.** `initialize` and all notifications and responses are POSTed synchronously; the server answers them at once, and later messages need the session. Other requests run concurrently, since their responses last as long as the tool runs.
+- **Server messages.** SSE events are re-encoded as compact one-line JSON, because multi-line `data:` would break line framing. Oversized or invalid events are dropped.
+- **Failures.** A request whose HTTP exchange fails gets a JSON-RPC error written by ifcproxy. Upstream bodies are never shown, since they are attacker-controlled.
+- **Network rules.** No redirects (they could carry headers elsewhere). Clear-text HTTP only to loopback.
+- **Why not listen on localhost?** Because tokens are bound to the server's URL, and a listening proxy would have to rewrite OAuth discovery. A stdio front end keeps the client config the same as for local servers.

@@ -75,3 +75,9 @@ Checks: vet clean; tests green on Windows; `-race` green on Linux.
 ## Remote servers via mcp-remote: verified
 - `ifcproxy -- npx -y mcp-remote https://mcp.deepwiki.com/mcp` works (Windows, mcp-remote 0.16.6): init, tools/list, allowed calls, cross-server trifecta deny with a pre-tainted session file (only the allowed `tools/call` reached upstream), clean shutdown with no leftover node processes. OAuth not tested.
 - `examples/servers/deepwiki.yaml`; README, LIMITATIONS and REAL_SERVERS updated (REAL_SERVERS also gets the live-agent results).
+
+## Streamable HTTP upstream (v0.2.0): done
+- `internal/streamhttp`: Streamable HTTP client shaped as a stdio server for the unchanged proxy core. Sessions, protocol header, JSON/SSE, GET stream with reconnect/405, DELETE on exit, JSON-RPC errors for every failed request, no redirects, https-or-loopback only, `--header` with `${VAR}`.
+- Tests: 12 unit tests (mutation-checked: compaction, error synthesis, redirects), 5 e2e tests incl. cross-transport trifecta; `-race` clean under WSL.
+- Live: DeepWiki and official server-everything (streamableHttp) — calls, labels, denies, session DELETE.
+- Not done: OAuth (use mcp-remote), legacy HTTP+SSE, resumability.

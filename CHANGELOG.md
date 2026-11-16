@@ -2,6 +2,17 @@
 
 Each section header is the exact release tag; the release workflow uses the section as release notes.
 
+## v0.2.0
+
+Released 2026-11-17.
+
+- **New: remote servers over Streamable HTTP.** `--upstream https://host/mcp` connects to a remote MCP server instead of starting a command; the client still launches ifcproxy as a stdio server, and labelling and policy work exactly as for local servers.
+  - `--header "Name: value"` adds request headers, with `${VAR}` read from the environment, so tokens stay off the command line.
+  - Supported: sessions (`Mcp-Session-Id`, deleted on exit), the protocol-version header, JSON and SSE responses, and the server-to-client GET stream with reconnects.
+  - Safety rules: HTTPS only (clear-text HTTP only on loopback), no redirects, and upstream error bodies are never shown.
+  - Tested against DeepWiki and the official `server-everything` in Streamable HTTP mode.
+- Not included: OAuth (use `mcp-remote` for OAuth servers), the legacy HTTP+SSE transport, and stream resumption.
+
 ## v0.1.1
 
 Released 2026-11-17.

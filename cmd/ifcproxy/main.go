@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"github.com/nomaskscientist/ifcproxy/internal/monitor"
 	"github.com/nomaskscientist/ifcproxy/internal/policy"
 	"github.com/nomaskscientist/ifcproxy/internal/proxy"
+	"github.com/nomaskscientist/ifcproxy/internal/streamhttp"
 	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
@@ -50,6 +52,8 @@ type options struct {
 	logArgs     bool
 	dryRun      bool
 	version     bool
+	upstream    string
+	headers     []string
 }
 
 // version is set at release build time with -ldflags "-X main.version=v1.2.3".
@@ -83,8 +87,13 @@ func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
 	fs.BoolVar(&o.logArgs, "log-args", false, "include tool arguments in the audit log (may contain secrets)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "decide and log, but forward every call (no enforcement)")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
+	fs.StringVar(&o.upstream, "upstream", "", "MCP server URL (Streamable HTTP) instead of a server command")
+	fs.Func("header", "extra upstream HTTP header \"Name: value\" (repeatable; ${VAR} reads the environment)", func(v string) error {
+		o.headers = append(o.headers, v)
+		return nil
+	})
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: ifcproxy --policy p.yaml [flags] -- <mcp server command> [args...]\n       ifcproxy --policy p.yaml --check\n\nflags:\n")
+		fmt.Fprintf(stderr, "usage: ifcproxy --policy p.yaml [flags] -- <mcp server command> [args...]\n       ifcproxy --policy p.yaml [flags] --upstream https://host/mcp [--header \"Name: value\"]...\n       ifcproxy --policy p.yaml --check\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -97,9 +106,18 @@ func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
 		fs.Usage()
 		return nil, nil, errors.New("--policy is required")
 	}
-	if !o.check && fs.NArg() == 0 {
+	switch {
+	case o.upstream != "" && fs.NArg() > 0:
+		return nil, nil, errors.New("give either --upstream or a server command after --, not both")
+	case o.upstream == "" && len(o.headers) > 0:
+		return nil, nil, errors.New("--header needs --upstream")
+	case o.upstream != "":
+		if err := streamhttp.ValidateURL(o.upstream); err != nil {
+			return nil, nil, err
+		}
+	case !o.check && fs.NArg() == 0:
 		fs.Usage()
-		return nil, nil, errors.New("missing MCP server command after --")
+		return nil, nil, errors.New("missing MCP server command after -- (or --upstream URL)")
 	}
 	switch o.askMode {
 	case "tty", "deny", "allow":
@@ -196,6 +214,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "ifcproxy: DRY RUN: decisions are logged but NOT enforced")
 	}
 
+	baseConfig := proxy.Config{
+		Monitor:         monitor.New(pol),
+		Session:         sess,
+		Store:           store,
+		Asker:           asker,
+		Audit:           sink,
+		DryRun:          o.dryRun,
+		LogArgs:         o.logArgs,
+		MaxMessageBytes: o.maxMessage,
+		MaxPending:      o.maxPending,
+	}
+	if o.upstream != "" {
+		code := runUpstream(o, baseConfig, stdin, stdout, stderr, childStderr)
+		if childStderrCloser != nil {
+			childStderrCloser.Close()
+		}
+		return code
+	}
+
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.Stderr = childStderr
 	// If descendants of the server keep stderr open after it exits, stop
@@ -220,18 +257,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	clientEOF := make(chan struct{})
-	cfg := proxy.Config{
-		Monitor:         monitor.New(pol),
-		Session:         sess,
-		Store:           store,
-		Asker:           asker,
-		Audit:           sink,
-		DryRun:          o.dryRun,
-		LogArgs:         o.logArgs,
-		MaxMessageBytes: o.maxMessage,
-		MaxPending:      o.maxPending,
-		OnClientEOF:     func() { close(clientEOF) },
-	}
+	cfg := baseConfig
+	cfg.OnClientEOF = func() { close(clientEOF) }
 	px, err := proxy.New(cfg)
 	if err != nil {
 		fmt.Fprintln(stderr, "ifcproxy:", err)
@@ -330,6 +357,44 @@ func supervise(ctx context.Context, proc *os.Process, clientEOF, stopped <-chan 
 		}
 	case <-stopped:
 	}
+}
+
+// runUpstream proxies to a Streamable HTTP server instead of a child process.
+// The session ends when the client closes its output or on a signal.
+func runUpstream(o *options, cfg proxy.Config, stdin io.Reader, stdout, stderr, logw io.Writer) int {
+	hdr := http.Header{}
+	for _, h := range o.headers {
+		k, v, err := streamhttp.ParseHeader(h, os.LookupEnv)
+		if err != nil {
+			fmt.Fprintln(stderr, "ifcproxy:", err)
+			return 2
+		}
+		hdr.Add(k, v)
+	}
+	conn, err := streamhttp.New(streamhttp.Config{
+		URL:             o.upstream,
+		Header:          hdr,
+		MaxMessageBytes: o.maxMessage,
+		Log:             logw,
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, "ifcproxy:", err)
+		return 2
+	}
+	px, err := proxy.New(cfg)
+	if err != nil {
+		fmt.Fprintln(stderr, "ifcproxy:", err)
+		return 1
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	if err := px.Run(ctx, stdin, stdout, conn, conn); err != nil {
+		fmt.Fprintln(stderr, "ifcproxy:", err)
+		return 1
+	}
+	return 0
 }
 
 func hasAsk(p *policy.Policy) bool {

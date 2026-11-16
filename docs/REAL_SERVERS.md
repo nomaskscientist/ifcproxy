@@ -58,6 +58,24 @@ Overhead is about 60 µs per call, from two extra pipe hops plus parsing.
 - **Explicit exfiltration request.** Claude's own safeguards refused it before any tool call. The proxy logs show nothing.
 - **Deterministic block.** In a fresh agent session sharing the tainted session file, a plain "fetch this page" was denied by ifcproxy: `lethal trifecta`, `forwarded: false`. The web server received no request.
 
+## Remote servers with --upstream (Streamable HTTP)
+
+Tested on 2026-11-17 on Windows with a scripted client:
+
+| Server | Check | Result |
+|---|---|---|
+| DeepWiki (`https://mcp.deepwiki.com/mcp`, public, stateless) | `initialize`, `tools/list` | pass, about 1.3 s; the same run through `mcp-remote` took 4.7 s |
+| DeepWiki | session file holding `private`: `read_wiki_structure`, then `ask_wiki_question` with a password | first allowed, second denied (`lethal trifecta`) |
+| `@modelcontextprotocol/server-everything` 1.0.0, `streamableHttp` mode | session id, SSE responses, 2 s long-running operation | pass |
+| server-everything | `get-env` (`private`), `simulate-research-query` (`untrusted`, answered with an error, still labelled), then undeclared `gzip-file-as-resource` | denied; on exit the server logged the session DELETE |
+
+Unit tests (`internal/streamhttp`) and end-to-end tests (`test/e2e/http_test.go`) cover the rest against fake servers:
+- multi-line SSE events;
+- HTTP errors, unexpected `202`, early stream end, wrong content type, invalid JSON and session expiry, each producing a JSON-RPC error with no upstream body leaked;
+- oversized messages, redirects, an unreachable upstream;
+- the GET stream with reconnects and `405`;
+- a stdio + HTTP cross-transport trifecta with one session file.
+
 ## Remote servers through mcp-remote
 
 ifcproxy speaks stdio only. A remote (Streamable HTTP) server can still be guarded by wrapping a stdio bridge. The bridge handles HTTP, SSE and OAuth; ifcproxy sees plain JSON-RPC:
