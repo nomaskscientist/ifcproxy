@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: vet + race tests (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        go: ["1.22.x", "stable"]
+        include:
+          - os: macos-latest
+            go: stable
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: go test -race
+        run: go test -race -count=1 ./...
+      - name: policy check
+        run: go run ./cmd/ifcproxy --policy examples/policy.yaml --check
+
+  windows:
+    name: tests (windows, no race)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+
+  fuzz:
+    name: short fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test -run '^$' -fuzz FuzzParse -fuzztime 30s ./internal/policy
+      - run: go test -run '^$' -fuzz FuzzClientDifferential -fuzztime 30s ./internal/proxy
+
+  bench:
+    name: benchmark smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test -run 'TestDecideZeroAlloc|TestDecideP99' -v ./internal/monitor
+      - run: go test -run '^$' -bench Decide -benchmem -benchtime 200ms ./internal/monitor

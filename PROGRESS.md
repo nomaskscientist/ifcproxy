@@ -30,3 +30,12 @@
 
 ## Next
 - M5: README, Makefile, GitHub Actions, docs/BENCH.md.
+
+## M5 — packaging: done
+- README (what it is, 3 commands, client config, example policy, flags, honest "does not guarantee"), Makefile (build, vet, test, race, bench, fuzz, check), GitHub Actions (gofmt, vet, `-race` on Linux go1.22.x/stable + macOS, Windows without race, short fuzz, bench smoke), `docs/BENCH.md`, final `docs/DESIGN.md`.
+- Verified: `go vet` clean and `go test -race ./...` green with Go 1.22.12 and 1.22.2 (linux/amd64); `go test ./...` green on Windows (Go 1.27.3); README demo run by hand and its output quoted.
+- Not verified: the Makefile (`make` is not installed on this machine) and the CI workflow (never run on GitHub).
+
+## Known gaps / possible next steps
+- See `docs/LIMITATIONS.md`. The biggest: unlabelled non-tool content (`tools/list` descriptions, resources, prompts), and that cross-server protection depends on `--session-file`.
+- Streamable HTTP transport; `tools/list` filtering of undeclared tools; value-level tracking (out of scope for v1).

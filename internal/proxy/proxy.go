@@ -516,7 +516,7 @@ func (p *Proxy) afterTaint(added taint.Label, tool, why string) {
 			p.audit(&audit.Event{Kind: audit.KindError, Reason: err.Error(), Labels: p.cfg.Session.Labels().Names()})
 		}
 	}
-	p.audit(&audit.Event{Kind: audit.KindTaint, Tool: tool, Reason: why, Added: added.Names(), Labels: p.cfg.Session.Labels().Names()})
+	p.audit(&audit.Event{Kind: audit.KindTaint, Tool: tool, Reason: why, Added: added.Names(), Labels: p.cfg.Session.Labels().Names(), Forward: true})
 }
 
 func (p *Proxy) syncStore() {
