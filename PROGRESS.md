@@ -61,4 +61,9 @@ Checks: vet clean; tests green on Windows; `-race` green on Linux.
 ## Release preparation: done
 - License: Apache-2.0 (canonical text + NOTICE). Module path: `github.com/nomaskscientist/ifcproxy`.
 - Private repository https://github.com/nomaskscientist/ifcproxy; first CI run found a racy e2e test (fixed) and a GitHub macOS capacity outage (job made non-blocking); second run fully green: Linux go1.22/stable with -race, macOS with -race, Windows, fuzz, benchmark smoke.
-- Live-agent demo: `examples/agent-demo/setup.ps1` + README; generated `.mcp.json` verified with a scripted client (scenario B denied, exfiltration URL never requested). Not yet run with a real LLM agent.
+- Live-agent demo: `examples/agent-demo/setup.ps1` + README; generated `.mcp.json` verified with a scripted client (scenario B denied, exfiltration URL never requested). Then run with a live Claude Code agent: scenario A (injection page) passed through the proxy with correct labels; the model itself ignored the injection. Exfiltration prompts were refused by Claude's own safeguards before any tool call. A fresh agent session sharing the tainted session file had its `fetch` denied by ifcproxy (`lethal trifecta`, not forwarded; web server saw no request).
+
+## v0.1.0 release prep: done
+- `--version` (set by `-ldflags -X main.version`, falls back to the `go install` module version).
+- `.github/workflows/release.yml`: on a `v*` tag, vet + race tests, static builds for linux/darwin/windows × amd64/arm64 with LICENSE, NOTICE, README and example policies, `SHA256SUMS`, smoke test of the linux binary, GitHub release with notes from `CHANGELOG.md`.
+- Packaging script verified locally under WSL (archives, checksums, `--version`, `--check`).

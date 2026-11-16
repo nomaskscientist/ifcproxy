@@ -17,7 +17,9 @@ Labels only ever accumulate within a session. Once a session has seen untrusted 
 
 ## Quick start
 
-Requires Go 1.22+. The only dependency is `gopkg.in/yaml.v3`.
+**Prebuilt binaries** for Linux, macOS and Windows (amd64, arm64) are on the [releases page](https://github.com/nomaskscientist/ifcproxy/releases). Each archive includes the example policies, and `SHA256SUMS` lists the checksums.
+
+**With Go 1.22+.** The only dependency is `gopkg.in/yaml.v3`.
 
 ```bash
 go install github.com/nomaskscientist/ifcproxy/cmd/ifcproxy@latest
@@ -113,6 +115,7 @@ rules:                           # first match wins; `when` = all labels present
 | `--session-id` | random | session id in audit records |
 | `--max-message-bytes` | 16 MiB | per-message limit |
 | `--max-pending` | 4096 | in-flight request limit |
+| `--version` | | print the version and exit |
 
 Audit record example:
 ```json

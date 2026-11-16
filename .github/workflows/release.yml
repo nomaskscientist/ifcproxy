@@ -1,0 +1,71 @@
+name: release
+
+# Push a tag like v0.1.0 to build binaries and publish a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: test
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      - name: build
+        env:
+          VERSION: ${{ github.ref_name }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            name="ifcproxy_${VERSION}_${os}_${arch}"
+            stage="dist/${name}"
+            mkdir -p "${stage}"
+            ext=""; [ "${os}" = windows ] && ext=".exe"
+            GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "${stage}/ifcproxy${ext}" ./cmd/ifcproxy
+            cp LICENSE NOTICE README.md "${stage}/"
+            cp -r examples "${stage}/examples"
+            rm -rf "${stage}/examples/agent-demo"
+            if [ "${os}" = windows ]; then
+              (cd dist && zip -qr "${name}.zip" "${name}")
+            else
+              tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+            fi
+            rm -rf "${stage}"
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+
+      - name: smoke-test linux binary
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tar -xzf "dist/ifcproxy_${VERSION}_linux_amd64.tar.gz" -C /tmp
+          bin="/tmp/ifcproxy_${VERSION}_linux_amd64/ifcproxy"
+          "${bin}" --version | grep -Fx "ifcproxy ${VERSION}"
+          "${bin}" --policy examples/policy.yaml --check
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="$(awk -v v="## ${VERSION}" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)"
+          [ -n "${notes}" ] || { echo "no CHANGELOG.md section for ${VERSION}"; exit 1; }
+          gh release create "${VERSION}" dist/* --title "${VERSION}" --notes "${notes}"

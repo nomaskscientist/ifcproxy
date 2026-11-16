@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +49,22 @@ type options struct {
 	auditPath   string
 	logArgs     bool
 	dryRun      bool
+	version     bool
+}
+
+// version is set at release build time with -ldflags "-X main.version=v1.2.3".
+var version = ""
+
+// versionString reports the release version, the module version recorded by
+// "go install ...@vX.Y.Z", or "devel".
+func versionString() string {
+	if version != "" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return "devel"
 }
 
 func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
@@ -65,12 +82,16 @@ func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
 	fs.StringVar(&o.auditPath, "audit", "-", "audit log (JSONL): file path, \"-\" for stderr, \"off\" to disable")
 	fs.BoolVar(&o.logArgs, "log-args", false, "include tool arguments in the audit log (may contain secrets)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "decide and log, but forward every call (no enforcement)")
+	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "usage: ifcproxy --policy p.yaml [flags] -- <mcp server command> [args...]\n       ifcproxy --policy p.yaml --check\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, err
+	}
+	if o.version {
+		return o, nil, nil
 	}
 	if o.policyPath == "" {
 		fs.Usage()
@@ -99,6 +120,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stderr, "ifcproxy:", err)
 		return 2
+	}
+	if o.version {
+		fmt.Fprintln(stdout, "ifcproxy", versionString())
+		return 0
 	}
 	pol, err := policy.Load(o.policyPath)
 	if err != nil {
