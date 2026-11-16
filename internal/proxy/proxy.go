@@ -366,7 +366,7 @@ func (p *Proxy) denyResponse(id json.RawMessage, tool string, d monitor.Decision
 		Result: deniedResult{
 			Content: []textContent{{Type: "text", Text: text}},
 			IsError: true,
-			Meta: map[string]denyMeta{"github.com/nomaskscientist/ifcproxy/decision": {
+			Meta: map[string]denyMeta{"ifcproxy/decision": {
 				Action: ev.Decision, Code: d.Code.String(), Rule: ev.Rule, Labels: d.Labels.Names(),
 			}},
 		},

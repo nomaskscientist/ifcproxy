@@ -181,6 +181,7 @@ type resp struct {
 		Content []struct {
 			Text string `json:"text"`
 		} `json:"content"`
+		Meta map[string]json.RawMessage `json:"_meta"`
 	} `json:"result"`
 	Error *struct {
 		Code    int    `json:"code"`
@@ -262,6 +263,12 @@ func TestTrifectaDenied(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("deny text %q missing %q", text, want)
 		}
+	}
+	// The _meta key is part of the documented interface; MCP requires a
+	// prefix without inner slashes.
+	want := `{"action":"deny","code":"rule","rule":1,"labels":["untrusted","private"]}`
+	if got := string(r.Result.Meta["ifcproxy/decision"]); got != want || len(r.Result.Meta) != 1 {
+		t.Errorf("_meta = %v, want only ifcproxy/decision = %s", r.Result.Meta, want)
 	}
 	h.syncServer(1)
 	var found bool

@@ -3,7 +3,7 @@ BIN       ?= bin
 FUZZTIME  ?= 30s
 EXT       := $(if $(filter Windows_NT,$(OS)),.exe,)
 
-.PHONY: all build vet test race bench fuzz check clean
+.PHONY: all build vet test race bench fuzz check clean demo demo-gif
 
 all: vet test build
 
@@ -33,3 +33,12 @@ check: build
 
 clean:
 	rm -rf $(BIN)
+
+# Play the lethal-trifecta attack against a real proxy.
+demo:
+	$(GO) run ./examples/trifecta-demo
+
+# Regenerate the README animation (needs Python with Pillow).
+demo-gif:
+	$(GO) run ./examples/trifecta-demo > $(BIN)/demo.ans
+	python scripts/render_demo_gif.py $(BIN)/demo.ans docs/demo.gif

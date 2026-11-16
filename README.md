@@ -6,6 +6,10 @@ A stdio MCP proxy that blocks the **lethal trifecta** deterministically: private
 - It decides every `tools/call` with a YAML policy **before** the server sees it.
 - No LLM classifiers, no heuristics: the same session and call always get the same decision.
 
+![A scripted agent reads a web page with a hidden instruction, reads a secret, and tries to e-mail it; ifcproxy denies the e-mail and the server never sees it](docs/demo.gif)
+
+The animation is the real output of `go run ./examples/trifecta-demo`: a real ifcproxy in front of the fake test server, with a scripted agent. A run with a live Claude Code agent and real servers is in [examples/agent-demo](examples/agent-demo/README.md).
+
 ```
 MCP client ──stdin/stdout──▶ ifcproxy ──stdin/stdout──▶ MCP server
                                │  tools/call → Decide(session labels, tool) → allow | deny | ask

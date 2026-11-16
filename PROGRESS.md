@@ -67,3 +67,7 @@ Checks: vet clean; tests green on Windows; `-race` green on Linux.
 - `--version` (set by `-ldflags -X main.version`, falls back to the `go install` module version).
 - `.github/workflows/release.yml`: on a `v*` tag, vet + race tests, static builds for linux/darwin/windows × amd64/arm64 with LICENSE, NOTICE, README and example policies, `SHA256SUMS`, smoke test of the linux binary, GitHub release with notes from `CHANGELOG.md`.
 - Packaging script verified locally under WSL (archives, checksums, `--version`, `--check`).
+
+## README demo + v0.1.1 fix: done
+- `examples/trifecta-demo`: scripted agent against a real ifcproxy + fakemcp; labels from the audit log, decisions from the real responses, server log proves `send_email` never ran. `scripts/render_demo_gif.py` turns its output into `docs/demo.gif` (`make demo-gif`).
+- Found while building it: the deny `_meta` key had become `github.com/nomaskscientist/ifcproxy/decision` in the module rename (shipped in v0.1.0). Restored to `ifcproxy/decision`; `TestTrifectaDenied` now pins it (fails without the fix).

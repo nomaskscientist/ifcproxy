@@ -2,6 +2,13 @@
 
 Each section header is the exact release tag; the release workflow uses the section as release notes.
 
+## v0.1.1
+
+Released 2026-11-16.
+
+- **Fix:** the `_meta` key on denied calls is `ifcproxy/decision` again, as documented. v0.1.0 sent `github.com/nomaskscientist/ifcproxy/decision`, a regression from the module rename, and that key is not a valid MCP `_meta` prefix. A test now pins the key.
+- **New:** `examples/trifecta-demo` plays the attack against a real proxy and prints each decision; its output is the README animation (`scripts/render_demo_gif.py`).
+
 ## v0.1.0
 
 Released 2026-11-16. First public release.
