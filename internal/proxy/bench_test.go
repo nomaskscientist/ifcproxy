@@ -67,7 +67,7 @@ func BenchmarkServerResult(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		px.mu.Lock()
-		px.pending["n:1"] = pending{tool: true, name: "fetch_url", produces: taint.Untrusted}
+		px.pending["n:1"] = pending{kind: kindToolCall, name: "fetch_url", produces: taint.Untrusted}
 		px.mu.Unlock()
 		px.observeServerLine(line)
 	}

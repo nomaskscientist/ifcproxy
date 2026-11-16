@@ -10,6 +10,7 @@ This is a list of attacks v1 does not stop, by design or by construction. Treat 
    - A tool that returns attacker-controlled content without `produces: [untrusted]` is a hole.
    - So is a tool that can move data out without `sink: external`: writing into a synced folder, `git push`, an HTTP GET with a query string, a "read" tool that does a DNS lookup on its input.
    - ifcproxy trusts tool names. A malicious or buggy server can do anything inside any tool, and can exfiltrate by itself without a `tools/call`.
+   - **Tools are identified by name only, not by server.** If several servers share one policy file, a server can claim another server's labels and rules by naming its tool the same (`fetch`, `read_file`). Give every server its own policy file (see `examples/servers/`).
 
 ## Content the proxy does not see or label
 
@@ -37,4 +38,5 @@ This is a list of attacks v1 does not stop, by design or by construction. Treat 
 14. **Arguments are not inspected,** apart from their size (`max_args_bytes`). No schema or value checks.
 15. **Audit log:** stderr by default, not tamper-evident. A failing audit sink does not stop enforcement, and lost records are only reported at exit.
 16. **`tools/list` is not filtered.** The model still sees undeclared tools and gets a denial when it calls them.
-17. **Side channels:** timing, which allowed tools get called, how many calls are made, and the fact that a call was denied are all observable. A low-bandwidth leak through them is not prevented.
+17. **MCP Tasks fail closed across sessions.** `tasks/result`, `tasks/get` and `tasks/cancel` for a task this proxy process did not see created carry every label. So does a `tasks/list` that lists one. Resuming tasks after a restart therefore taints the session fully. Tasks are experimental in the spec; only the 2025-11-25 shapes are handled.
+18. **Side channels:** timing, which allowed tools get called, how many calls are made, and the fact that a call was denied are all observable. A low-bandwidth leak through them is not prevented.

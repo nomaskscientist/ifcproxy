@@ -36,3 +36,11 @@
 ## Known gaps / possible next steps
 - See `docs/LIMITATIONS.md`. The biggest: unlabelled non-tool content (`tools/list` descriptions, resources, prompts), and that cross-server protection depends on `--session-file`.
 - Streamable HTTP transport; `tools/list` filtering of undeclared tools; value-level tracking (out of scope for v1).
+
+## After M5 — testing with real servers: done
+- Official servers (filesystem, everything, memory 1.0.0; mcp-server-fetch 2026.11.11) behind the proxy, driven by the official Inspector CLI 2.13 and a scripted client. Results: `docs/REAL_SERVERS.md`.
+- Cross-server trifecta with a real injection page: denied; the exfiltration URL never reached the HTTP server.
+- Found and fixed: MCP Tasks (2025-11-25) responses could deliver content without labels across sessions; now `taskId → labels` is tracked and unknown tasks fail closed. `task` key added to the smuggling checks.
+- Found and documented: tools are identified by name only, so use one policy per server; added `examples/servers/*.yaml`.
+- Measured overhead on real round trips: about 60 µs per call.
+- Not done: a live LLM agent (no LLM client installed on this machine); instructions in REAL_SERVERS.md.

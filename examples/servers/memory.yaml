@@ -1,0 +1,19 @@
+# Policy for @modelcontextprotocol/server-memory (tool list checked against v1.0.0).
+# The knowledge graph persists across sessions, so whatever a previous session
+# stored (possibly injected text) comes back: reads are untrusted AND private.
+version: 1
+max_args_bytes: 262144
+
+tools:
+  read_graph:          {produces: [untrusted, private]}
+  search_nodes:        {produces: [untrusted, private]}
+  open_nodes:          {produces: [untrusted, private]}
+  create_entities:     {}
+  create_relations:    {}
+  add_observations:    {}
+  delete_entities:     {}
+  delete_observations: {}
+  delete_relations:    {}
+
+rules:
+  - {tool: delete_entities, when: [untrusted], action: ask, reason: deleting memory after untrusted content}

@@ -50,7 +50,7 @@ type Config struct {
 }
 
 type pending struct {
-	tool     bool
+	kind     pendingKind
 	name     string
 	produces taint.Label
 }
@@ -63,6 +63,7 @@ type Proxy struct {
 
 	mu      sync.Mutex
 	pending map[string]pending
+	tasks   map[string]taint.Label // taskId -> labels of the task-augmented call that created it
 }
 
 // New validates cfg and returns a Proxy.
@@ -79,7 +80,7 @@ func New(cfg Config) (*Proxy, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Proxy{cfg: cfg, pending: make(map[string]pending)}, nil
+	return &Proxy{cfg: cfg, pending: make(map[string]pending), tasks: make(map[string]taint.Label)}, nil
 }
 
 // Run proxies until the server closes its output. Client EOF closes serverIn
@@ -219,7 +220,8 @@ func (p *Proxy) handleClientElement(ctx context.Context, raw []byte) (forward bo
 		if !ok {
 			return true, nil // invalid id: server will reply with an error we do not track
 		}
-		if err := p.register(key, pending{}); err != nil {
+		e, _ := p.taskRequest(m.method, m.params)
+		if err := p.register(key, e); err != nil {
 			return false, p.reject(m.id, "", err)
 		}
 		return true, nil
@@ -292,7 +294,11 @@ func (p *Proxy) handleToolsCall(ctx context.Context, m message) (bool, []byte) {
 	}
 
 	if allowed || p.cfg.DryRun {
-		if err := p.register(key, pending{tool: true, name: tc.name, produces: p.cfg.Monitor.Produces(tc.name)}); err != nil {
+		kind := kindToolCall
+		if tc.task {
+			kind = kindTaskCall
+		}
+		if err := p.register(key, pending{kind: kind, name: tc.name, produces: p.cfg.Monitor.Produces(tc.name)}); err != nil {
 			ev.Decision, ev.Reason = "deny", err.Error()
 			p.audit(ev)
 			return false, errorResponse(m.id, err.(*rpcError))
@@ -381,7 +387,10 @@ func (p *Proxy) cancel(params json.RawMessage) {
 	e, found := p.pending[key]
 	delete(p.pending, key)
 	p.mu.Unlock()
-	if found && e.tool {
+	if found && e.kind == kindTaskList {
+		e.produces = taint.Known // the listing may already be on its way
+	}
+	if found && e.kind != kindPlain {
 		p.taintTool(e)
 	}
 }
@@ -474,10 +483,18 @@ func (p *Proxy) observeServerElement(raw []byte) {
 		delete(p.pending, key)
 	}
 	p.mu.Unlock()
-	switch {
-	case !found:
+	if !found {
 		p.taint(p.pendingUnion(), "server response with unknown id")
-	case e.tool:
+		return
+	}
+	switch e.kind {
+	case kindToolCall:
+		p.taintTool(e)
+	case kindTaskCall:
+		p.taintTool(e)
+		p.recordTask(m.result, e.produces)
+	case kindTaskList:
+		e.produces = p.listLabels(m.result)
 		p.taintTool(e)
 	}
 }
@@ -487,9 +504,7 @@ func (p *Proxy) pendingUnion() taint.Label {
 	defer p.mu.Unlock()
 	var l taint.Label
 	for _, e := range p.pending {
-		if e.tool {
-			l |= e.produces
-		}
+		l |= e.produces
 	}
 	return l
 }

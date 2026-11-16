@@ -58,6 +58,7 @@ Wrap the server command in any client that uses the usual `mcpServers` JSON (Cla
 }
 ```
 
+- **Give every server its own policy file.** Tools are matched by name only. Starting points for the official servers (filesystem, fetch, memory, everything) are in [`examples/servers/`](examples/servers/).
 - **Wrap every server with the same `--session-file`.** Otherwise each proxy has its own session, and a trifecta spread across servers goes undetected. Delete the file to start a new session.
 - **GUI clients have no terminal for confirmations.** Use `--ask-mode deny` (or `allow`) explicitly with them. The default `tty` asks on the controlling terminal and denies when there is none.
 
@@ -133,5 +134,6 @@ make vet test race bench fuzz
 
 - **Race tests** need cgo (a C compiler). On Windows without one, run `go test -race ./...` under WSL.
 - **Attack scenarios:** [docs/ATTACKS.md](docs/ATTACKS.md).
+- **Real servers and client:** [docs/REAL_SERVERS.md](docs/REAL_SERVERS.md). Tested with official servers (filesystem, fetch, memory, everything) and the official Inspector client, including MCP Tasks. Measured overhead: about 60 µs per call.
 - **Benchmarks:** [docs/BENCH.md](docs/BENCH.md). `Decide`: about 15–30 ns/op, 0 allocations, p99 about 50 ns.
 - **Design notes:** [docs/DESIGN.md](docs/DESIGN.md).

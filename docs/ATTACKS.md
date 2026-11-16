@@ -32,7 +32,15 @@ Also covered end to end:
 - killing a server that ignores EOF after the 5 s grace period (`TestServerIgnoringEOFIsKilled`);
 - refusing to start on an invalid policy (`TestInvalidPolicyRefusesToStart`).
 
+Real servers (see [REAL_SERVERS.md](REAL_SERVERS.md)): a cross-server trifecta with server-filesystem and mcp-server-fetch, driven by the official Inspector CLI, is denied. The injection page's server log shows the exfiltration URL was never requested.
+
 Unit level (`internal/proxy`):
+- **MCP Tasks:**
+  - a task-augmented call taints at `CreateTaskResult`;
+  - `tasks/result`, `tasks/get`, `tasks/cancel` for unknown tasks fail closed;
+  - `tasks/list` with an unknown task fails closed;
+  - `task`/`TASK` key smuggling is rejected;
+  - task-augmented sink calls are still denied (`TestTask*`).
 - Kelvin-sign key folding;
 - `notifications/cancelled` tainting;
 - responses with unknown ids inheriting labels of pending tool calls;

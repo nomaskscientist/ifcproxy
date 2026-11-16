@@ -36,6 +36,7 @@ type message struct {
 	id        json.RawMessage
 	method    string
 	params    json.RawMessage
+	result    json.RawMessage
 	hasID     bool
 	hasMethod bool
 	hasResult bool
@@ -66,7 +67,7 @@ func parseMessage(raw []byte) (message, error) {
 		case "params":
 			m.params = val
 		case "result":
-			m.hasResult = true
+			m.result, m.hasResult = val, true
 		case "error":
 			m.hasError = true
 		}
@@ -207,9 +208,10 @@ func idKey(raw json.RawMessage) (string, bool) {
 type toolCall struct {
 	name string
 	args json.RawMessage // raw "arguments" object, or nil
+	task bool            // task-augmented call (MCP Tasks)
 }
 
-var callParamKeys = []string{"name", "arguments", "_meta"}
+var callParamKeys = []string{"name", "arguments", "task", "_meta"}
 
 func parseToolCall(params json.RawMessage) (toolCall, error) {
 	var tc toolCall
@@ -232,6 +234,8 @@ func parseToolCall(params json.RawMessage) (toolCall, error) {
 				return &rpcError{codeInvalidParams, "tools/call params.arguments must be an object"}
 			}
 			tc.args = val
+		case "task":
+			tc.task = true
 		}
 		return nil
 	}, callParamKeys)

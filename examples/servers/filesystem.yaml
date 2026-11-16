@@ -1,0 +1,32 @@
+# Policy for @modelcontextprotocol/server-filesystem (tool list checked against v1.0.0).
+# Use one policy file per server: tools are identified by name only.
+#
+# File contents are treated as private. If the allowed directories contain
+# third-party content (cloned repos, downloads), add `untrusted` to the read
+# tools too — at the cost of blocking more.
+version: 1
+max_args_bytes: 1048576
+
+tools:
+  read_file:                {produces: [private]}
+  read_text_file:           {produces: [private]}
+  read_media_file:          {produces: [private]}
+  read_multiple_files:      {produces: [private]}
+  list_directory:           {produces: [private]}
+  list_directory_with_sizes: {produces: [private]}
+  directory_tree:           {produces: [private]}
+  search_files:             {produces: [private]}
+  get_file_info:            {produces: [private]}
+  list_allowed_directories: {}
+  write_file:               {}
+  edit_file:                {}
+  create_directory:         {}
+  move_file:                {}
+
+rules:
+  # Writes are local (not an external sink), but after untrusted content has
+  # been seen they may be attacker-directed: ask a human.
+  - {tool: write_file,       when: [untrusted], action: ask, reason: file write after untrusted content}
+  - {tool: edit_file,        when: [untrusted], action: ask, reason: file edit after untrusted content}
+  - {tool: move_file,        when: [untrusted], action: ask, reason: file move after untrusted content}
+  - {tool: create_directory, when: [untrusted], action: ask, reason: directory creation after untrusted content}

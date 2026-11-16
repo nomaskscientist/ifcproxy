@@ -1,0 +1,19 @@
+# Policy for @modelcontextprotocol/server-everything (reference/test server, v1.0.0).
+# Used to exercise protocol features through the proxy: progress and logging
+# notifications, structured content, resource links, images.
+version: 1
+
+tools:
+  echo:                           {}
+  get-sum:                        {}
+  get-tiny-image:                 {}
+  get-annotated-message:          {}
+  get-structured-content:         {}
+  get-resource-links:             {}
+  get-resource-reference:         {}
+  get-env:                        {produces: [private]}   # dumps environment variables
+  trigger-long-running-operation: {}
+  simulate-research-query:        {produces: [untrusted]}
+  toggle-simulated-logging:       {}
+  toggle-subscriber-updates:      {}
+  # gzip-file-as-resource is deliberately undeclared (it fetches URLs): denied.

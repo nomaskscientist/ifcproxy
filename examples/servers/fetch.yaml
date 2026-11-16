@@ -1,0 +1,14 @@
+# Policy for mcp-server-fetch (PyPI; tool list checked against 2026.11.11).
+# fetch both brings in untrusted content and is an exfiltration channel:
+# the URL (path, query string, host name) is attacker-readable.
+version: 1
+max_args_bytes: 16384
+
+tools:
+  fetch: {produces: [untrusted], sink: external}
+
+rules:
+  - tool: sink:external
+    when: [untrusted, private]
+    action: deny
+    reason: "lethal trifecta: the session holds untrusted content and private data"

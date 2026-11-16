@@ -26,6 +26,8 @@ Allowed `tools/call` messages and all other messages are forwarded **byte-for-by
 - **Conservative attribution:** a server notification or request while tool calls are pending, a response with an unknown id, and an unparseable or oversized server message all inherit the union of labels of the pending tool calls. Oversized server messages are streamed through rather than buffered.
 - A cancelled tool call is tainted at cancel time (its result may race the cancellation).
 
+**MCP Tasks (2025-11-25).** A task-augmented `tools/call` is decided like any other. Its `CreateTaskResult` taints with the tool's labels and records `taskId → labels`. `tasks/result`, `tasks/get` and `tasks/cancel` inherit the task's labels, and every label for unknown tasks. `tasks/list` gets the union of the listed tasks' labels, or every label if any is unknown. Error results taint like successes (error text can carry attacker content).
+
 **Pipelined calls.** A call is judged on the labels present *when it is sent*. Calls issued together (parallel tool calls in one model turn) can't carry data from results not yet delivered, so this is sound for the model. Checked in `README` by sending calls one at a time; a client sending a sink call in the same burst as a read is allowed by design.
 
 **Deny representation.**
