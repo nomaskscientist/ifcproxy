@@ -28,9 +28,6 @@
 - Bug found and fixed by the e2e tests: the "hung server" fixture used `select {}`, which the Go runtime aborts as a deadlock; now it sleeps.
 - Checks: vet clean; `go test ./...` green on Windows; `go test -race ./...` green on Linux (WSL).
 
-## Next
-- M5: README, Makefile, GitHub Actions, docs/BENCH.md.
-
 ## M5 — packaging: done
 - README (what it is, 3 commands, client config, example policy, flags, honest "does not guarantee"), Makefile (build, vet, test, race, bench, fuzz, check), GitHub Actions (gofmt, vet, `-race` on Linux go1.22.x/stable + macOS, Windows without race, short fuzz, bench smoke), `docs/BENCH.md`, final `docs/DESIGN.md`.
 - Verified: `go vet` clean and `go test -race ./...` green with Go 1.22.12 and 1.22.2 (linux/amd64); `go test ./...` green on Windows (Go 1.27.3); README demo run by hand and its output quoted.
