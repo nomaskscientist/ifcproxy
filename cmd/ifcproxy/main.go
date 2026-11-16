@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"ifcproxy/internal/ask"
+	"ifcproxy/internal/audit"
 	"ifcproxy/internal/monitor"
 	"ifcproxy/internal/policy"
 	"ifcproxy/internal/proxy"
@@ -37,6 +39,11 @@ type options struct {
 	sessionFile string
 	maxMessage  int
 	maxPending  int
+	askMode     string
+	askTimeout  time.Duration
+	auditPath   string
+	logArgs     bool
+	dryRun      bool
 }
 
 func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
@@ -49,6 +56,11 @@ func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
 	fs.StringVar(&o.sessionFile, "session-file", "", "share session labels with other ifcproxy instances through this file")
 	fs.IntVar(&o.maxMessage, "max-message-bytes", proxy.DefaultMaxMessageBytes, "maximum size of one JSON-RPC message")
 	fs.IntVar(&o.maxPending, "max-pending", proxy.DefaultMaxPending, "maximum number of in-flight client requests")
+	fs.StringVar(&o.askMode, "ask-mode", "tty", "how to resolve action: ask — tty (prompt on the controlling terminal), deny, allow")
+	fs.DurationVar(&o.askTimeout, "ask-timeout", 60*time.Second, "deny an unanswered tty prompt after this long (0 = wait forever)")
+	fs.StringVar(&o.auditPath, "audit", "-", "audit log (JSONL): file path, \"-\" for stderr, \"off\" to disable")
+	fs.BoolVar(&o.logArgs, "log-args", false, "include tool arguments in the audit log (may contain secrets)")
+	fs.BoolVar(&o.dryRun, "dry-run", false, "decide and log, but forward every call (no enforcement)")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "usage: ifcproxy --policy p.yaml [flags] -- <mcp server command> [args...]\n       ifcproxy --policy p.yaml --check\n\nflags:\n")
 		fs.PrintDefaults()
@@ -63,6 +75,14 @@ func parseFlags(args []string, stderr io.Writer) (*options, []string, error) {
 	if !o.check && fs.NArg() == 0 {
 		fs.Usage()
 		return nil, nil, errors.New("missing MCP server command after --")
+	}
+	switch o.askMode {
+	case "tty", "deny", "allow":
+	default:
+		return nil, nil, fmt.Errorf("--ask-mode must be tty, deny or allow, got %q", o.askMode)
+	}
+	if o.askTimeout < 0 {
+		return nil, nil, errors.New("--ask-timeout must not be negative")
 	}
 	return o, fs.Args(), nil
 }
@@ -105,6 +125,41 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
+	var sink audit.Sink
+	switch o.auditPath {
+	case "off":
+	case "-":
+		j := audit.NewJSONL(stderr)
+		sink = j
+		defer reportAuditLoss(j, stderr)
+	default:
+		j, err := audit.OpenFile(o.auditPath)
+		if err != nil {
+			fmt.Fprintln(stderr, "ifcproxy:", err)
+			return 2
+		}
+		sink = j
+		defer j.Close()
+		defer reportAuditLoss(j, stderr)
+	}
+
+	var asker ask.Asker
+	switch o.askMode {
+	case "allow":
+		asker = ask.Static(true)
+	case "deny":
+		asker = ask.Static(false)
+	default:
+		tty := ask.NewTTY(o.askTimeout)
+		if err := tty.Available(); err != nil && hasAsk(pol) {
+			fmt.Fprintf(stderr, "ifcproxy: warning: no terminal for confirmations (%v); calls with action ask will be denied\n", err)
+		}
+		asker = tty
+	}
+	if o.dryRun {
+		fmt.Fprintln(stderr, "ifcproxy: DRY RUN: decisions are logged but NOT enforced")
+	}
+
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.Stderr = stderr
 	serverIn, err := cmd.StdinPipe()
@@ -129,6 +184,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Monitor:         monitor.New(pol),
 		Session:         sess,
 		Store:           store,
+		Asker:           asker,
+		Audit:           sink,
+		DryRun:          o.dryRun,
+		LogArgs:         o.logArgs,
 		MaxMessageBytes: o.maxMessage,
 		MaxPending:      o.maxPending,
 		OnClientEOF:     func() { close(clientEOF) },
@@ -195,6 +254,21 @@ func terminate(proc *os.Process) {
 		return
 	}
 	time.AfterFunc(shutdownGrace, func() { _ = proc.Kill() })
+}
+
+func hasAsk(p *policy.Policy) bool {
+	for _, r := range p.Rules {
+		if r.Action == policy.Ask {
+			return true
+		}
+	}
+	return false
+}
+
+func reportAuditLoss(j *audit.JSONL, stderr io.Writer) {
+	if n, err := j.Err(); err != nil {
+		fmt.Fprintf(stderr, "ifcproxy: warning: %d audit records lost: %v\n", n, err)
+	}
 }
 
 func randomID() string {

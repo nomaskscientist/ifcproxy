@@ -15,5 +15,11 @@
 - Checks: vet clean, `go test -race ./...` green (WSL).
 - MCP spec checked (2025-06-18 transports + tools pages): newline framing with no embedded newlines; tool errors as `isError` results.
 
+## M3 — ask mode and audit: done
+- `internal/ask`: `TTY` asker (`/dev/tty`; `CONIN$`/`CONOUT$` on Windows), serialised prompts, timeout → deny, context cancel → deny, open failure → deny; prompt escapes model-controlled values (ANSI/OSC/bidi spoofing); `Static` for `--ask-mode=allow|deny`.
+- `internal/audit`: JSONL sink (one `Write` per record, mutex, write errors counted and reported at exit). Fields: time, session, event, id, tool, decision, policy_action, code, rule, rule_line, reason, labels, added, dry_run, forwarded, args (only with `--log-args`).
+- CLI: `--ask-mode`, `--ask-timeout`, `--audit` (`-`/path/`off`), `--log-args`, `--dry-run` (decides and logs, forwards everything, warns on stderr).
+- Checks: vet clean, `go test -race ./...` green (WSL).
+
 ## Next
-- M3: tty asker, JSONL audit sink, `--ask-mode`, `--audit`, `--log-args`, `--dry-run`.
+- M4: fake MCP server + end-to-end attack scenarios through the real binary; docs/LIMITATIONS.md.

@@ -590,3 +590,38 @@ func TestFoldKey(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditArgsOnlyWithLogArgs(t *testing.T) {
+	for _, logArgs := range []bool{false, true} {
+		h := newHarness(t, func(c *Config) { c.LogArgs = logArgs })
+		h.client(call("1", "echo", `{"secret":"hunter2"}`))
+		h.expectServer()
+		var ev *audit.Event
+		for _, e := range h.sink.events() {
+			if e.Kind == audit.KindCall {
+				e := e
+				ev = &e
+			}
+		}
+		if ev == nil || ev.Decision != "allow" || !ev.Forward {
+			t.Fatalf("audit %+v", ev)
+		}
+		if got := string(ev.Args); logArgs != (got == `{"secret":"hunter2"}`) || (!logArgs && got != "") {
+			t.Fatalf("logArgs=%v args=%q", logArgs, got)
+		}
+	}
+}
+
+func TestAuditTaintEvent(t *testing.T) {
+	h := newHarness(t, nil)
+	h.runTool("1", "fetch_url")
+	var found bool
+	for _, e := range h.sink.events() {
+		if e.Kind == audit.KindTaint && e.Tool == "fetch_url" && len(e.Added) == 1 && e.Added[0] == "untrusted" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no taint event: %+v", h.sink.events())
+	}
+}
