@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,7 +27,10 @@ import (
 	"ifcproxy/internal/taint"
 )
 
-const shutdownGrace = 5 * time.Second
+const (
+	shutdownGrace = 5 * time.Second // client gone or signal received -> kill
+	orphanGrace   = 2 * time.Second // after a kill, how long to wait for the server's pipes to close
+)
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -126,12 +130,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	var sink audit.Sink
+	var childStderr io.Writer = stderr
+	var childStderrCloser io.Closer
 	switch o.auditPath {
 	case "off":
 	case "-":
 		j := audit.NewJSONL(stderr)
 		sink = j
 		defer reportAuditLoss(j, stderr)
+		// The server's stderr shares the destination: route it through a
+		// writer that emits whole lines under the audit lock, so server
+		// logs never split an audit record.
+		lw := j.LineWriter()
+		childStderr, childStderrCloser = lw, lw
 	default:
 		j, err := audit.OpenFile(o.auditPath)
 		if err != nil {
@@ -161,7 +172,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	cmd.Stderr = stderr
+	cmd.Stderr = childStderr
+	// If descendants of the server keep stderr open after it exits, stop
+	// waiting for them after this long.
+	cmd.WaitDelay = orphanGrace
+	setProcGroup(cmd)
 	serverIn, err := cmd.StdinPipe()
 	if err != nil {
 		fmt.Fprintln(stderr, "ifcproxy:", err)
@@ -201,10 +216,35 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	stopped := make(chan struct{})
 	defer close(stopped)
-	go supervise(ctx, cmd.Process, clientEOF, stopped)
+	killed := make(chan struct{})
+	go supervise(ctx, cmd.Process, clientEOF, stopped, killed)
 
-	runErr := px.Run(ctx, stdin, stdout, serverIn, serverOut)
+	runDone := make(chan error, 1)
+	go func() { runDone <- px.Run(ctx, stdin, stdout, serverIn, serverOut) }()
+	var runErr error
+	var orphanTimeout <-chan time.Time
+wait:
+	for {
+		select {
+		case runErr = <-runDone:
+			break wait
+		case <-killed:
+			killed = nil
+			orphanTimeout = time.After(orphanGrace)
+		case <-orphanTimeout:
+			// The server was killed but something still holds its stdout
+			// (descendants we could not reach). Do not hang the client.
+			fmt.Fprintln(stderr, "ifcproxy: server output still open after the server was killed (orphaned child processes?); exiting")
+			if childStderrCloser != nil {
+				childStderrCloser.Close()
+			}
+			return 1
+		}
+	}
 	waitErr := cmd.Wait()
+	if childStderrCloser != nil {
+		childStderrCloser.Close()
+	}
 	if runErr != nil {
 		fmt.Fprintln(stderr, "ifcproxy:", runErr)
 	}
@@ -226,34 +266,45 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 }
 
-// supervise terminates the server when the proxy is interrupted, or when the
-// client has gone away and the server has not exited within shutdownGrace.
-func supervise(ctx context.Context, proc *os.Process, clientEOF, stopped <-chan struct{}) {
+// supervise terminates the server (and its process tree) when the proxy is
+// interrupted, or when the client has gone away and the server has not
+// exited within shutdownGrace. killed is closed after a hard kill.
+func supervise(ctx context.Context, proc *os.Process, clientEOF, stopped <-chan struct{}, killed chan<- struct{}) {
+	var once sync.Once
+	kill := func() {
+		once.Do(func() {
+			killTree(proc)
+			close(killed)
+		})
+	}
+	terminate := func() {
+		if err := termTree(proc); err != nil {
+			kill()
+			return
+		}
+		t := time.NewTimer(shutdownGrace)
+		defer t.Stop()
+		select {
+		case <-t.C:
+			kill()
+		case <-stopped:
+		}
+	}
 	select {
 	case <-ctx.Done():
-		terminate(proc)
+		terminate()
 	case <-clientEOF:
 		t := time.NewTimer(shutdownGrace)
 		defer t.Stop()
 		select {
 		case <-t.C:
-			_ = proc.Kill()
+			kill()
 		case <-ctx.Done():
-			terminate(proc)
+			terminate()
 		case <-stopped:
 		}
 	case <-stopped:
 	}
-}
-
-// terminate asks the process to stop (SIGTERM where supported) and kills it
-// after the grace period.
-func terminate(proc *os.Process) {
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
-		_ = proc.Kill()
-		return
-	}
-	time.AfterFunc(shutdownGrace, func() { _ = proc.Kill() })
 }
 
 func hasAsk(p *policy.Policy) bool {

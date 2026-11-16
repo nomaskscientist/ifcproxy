@@ -104,7 +104,7 @@ func walkObject(raw []byte, fn func(key string, val json.RawMessage) error, sign
 		}
 		seen[fk] = key
 		for _, s := range significant {
-			if fk == s && key != s {
+			if fk == foldKey(s) && key != s {
 				return errInvalid("non-canonical key " + strconv.Quote(key) + " (expected " + strconv.Quote(s) + ")")
 			}
 		}
@@ -155,13 +155,24 @@ func foldKey(s string) string {
 	return b.String()
 }
 
-// isObfuscatedToolsCall reports whether method is not exactly "tools/call"
-// but would become it after case folding and removal of whitespace, control
-// and format (zero-width, bidi) characters — i.e. something a lenient server
-// might still dispatch as tools/call.
-func isObfuscatedToolsCall(method string) bool {
-	if method == "tools/call" {
-		return false
+// securityMethods are the methods whose handling affects labels or
+// decisions. Each must arrive spelled exactly; see obfuscatedMethod.
+var securityMethods = []string{
+	"tools/call",
+	"tasks/result", "tasks/get", "tasks/cancel", "tasks/list",
+	"notifications/cancelled",
+}
+
+// obfuscatedMethod reports whether method is not exactly one of the
+// securityMethods but becomes one after case folding and removal of
+// whitespace, control and format (zero-width, bidi) characters — i.e.
+// something a lenient server might still dispatch as that method while the
+// proxy would treat it as an unrelated one.
+func obfuscatedMethod(method string) bool {
+	for _, s := range securityMethods {
+		if method == s {
+			return false
+		}
 	}
 	var b strings.Builder
 	for _, r := range method {
@@ -170,7 +181,13 @@ func isObfuscatedToolsCall(method string) bool {
 		}
 		b.WriteRune(r)
 	}
-	return foldKey(b.String()) == "tools/call"
+	n := foldKey(b.String())
+	for _, s := range securityMethods {
+		if n == s {
+			return true
+		}
+	}
+	return false
 }
 
 // idKey returns a canonical map key for a JSON-RPC id. Numbers are

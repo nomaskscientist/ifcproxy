@@ -26,6 +26,10 @@ import (
 const (
 	DefaultMaxMessageBytes = 16 << 20
 	DefaultMaxPending      = 4096
+	// DefaultPlainTTL: when the pending table is full, entries for non-tool
+	// requests older than this are dropped. They carry no labels, so a late
+	// response to one is merely treated as an unknown id (conservatively).
+	DefaultPlainTTL = 5 * time.Minute
 )
 
 // Config configures a Proxy.
@@ -41,6 +45,7 @@ type Config struct {
 
 	MaxMessageBytes int // per-message limit in both directions
 	MaxPending      int // max in-flight client requests
+	PlainTTL        time.Duration
 
 	// OnClientEOF is called once when the client closes its output (after the
 	// server's stdin has been closed).
@@ -53,6 +58,7 @@ type pending struct {
 	kind     pendingKind
 	name     string
 	produces taint.Label
+	since    time.Time
 }
 
 // Proxy is a single client<->server stdio session.
@@ -61,9 +67,10 @@ type Proxy struct {
 
 	outMu sync.Mutex // serialises writes to the client
 
-	mu      sync.Mutex
-	pending map[string]pending
-	tasks   map[string]taint.Label // taskId -> labels of the task-augmented call that created it
+	mu        sync.Mutex
+	pending   map[string]pending
+	labelRefs [32]int32              // per label bit: number of pending entries producing it
+	tasks     map[string]taint.Label // taskId -> labels of the task-augmented call that created it
 }
 
 // New validates cfg and returns a Proxy.
@@ -79,6 +86,9 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.PlainTTL <= 0 {
+		cfg.PlainTTL = DefaultPlainTTL
 	}
 	return &Proxy{cfg: cfg, pending: make(map[string]pending), tasks: make(map[string]taint.Label)}, nil
 }
@@ -206,27 +216,55 @@ func (p *Proxy) handleClientElement(ctx context.Context, raw []byte) (forward bo
 		// reject). Not a tool call: pass through unchanged.
 		return true, nil
 	}
-	if isObfuscatedToolsCall(m.method) {
-		return false, p.reject(m.id, "", errInvalid(fmt.Sprintf("non-canonical method %q refused", m.method)))
-	}
-	if m.method != "tools/call" {
+	if obfuscatedMethod(m.method) {
+		err := errInvalid(fmt.Sprintf("non-canonical method %q refused", m.method))
 		if !m.hasID {
-			if m.method == "notifications/cancelled" {
-				p.cancel(m.params)
+			p.reject(nil, "", err) // notifications get no reply
+			return false, nil
+		}
+		return false, p.reject(m.id, "", err)
+	}
+	if m.method == "tools/call" {
+		return p.handleToolsCall(ctx, m)
+	}
+	if !m.hasID {
+		if isTaskMethod(m.method) {
+			// A lenient server may answer it anyway (id null), and such a
+			// response cannot be correlated and labelled. Drop it.
+			p.reject(nil, "", errInvalid(m.method+" sent as a notification (no id) dropped"))
+			return false, nil
+		}
+		if m.method == "notifications/cancelled" {
+			if err := p.cancel(m.params); err != nil {
+				p.reject(nil, "", err)
+				return false, nil
 			}
-			return true, nil // notification
 		}
-		key, ok := idKey(m.id)
+		return true, nil // notification
+	}
+	key, ok := idKey(m.id)
+	if isTaskMethod(m.method) {
+		// Task responses carry tool output: they must be correlated, so the
+		// same id rules as tools/call apply.
 		if !ok {
-			return true, nil // invalid id: server will reply with an error we do not track
+			return false, p.reject(nil, "", errInvalid(m.method+" id must be a string or a number"))
 		}
-		e, _ := p.taskRequest(m.method, m.params)
+		e, err := p.taskRequest(m.method, m.params)
+		if err != nil {
+			return false, p.reject(m.id, "", err)
+		}
 		if err := p.register(key, e); err != nil {
 			return false, p.reject(m.id, "", err)
 		}
 		return true, nil
 	}
-	return p.handleToolsCall(ctx, m)
+	if !ok {
+		return true, nil // invalid id: carries no labels either way
+	}
+	if err := p.register(key, pending{kind: kindPlain, name: m.method}); err != nil {
+		return false, p.reject(m.id, "", err)
+	}
+	return true, nil
 }
 
 func (p *Proxy) handleToolsCall(ctx context.Context, m message) (bool, []byte) {
@@ -301,7 +339,11 @@ func (p *Proxy) handleToolsCall(ctx context.Context, m message) (bool, []byte) {
 		if err := p.register(key, pending{kind: kind, name: tc.name, produces: p.cfg.Monitor.Produces(tc.name)}); err != nil {
 			ev.Decision, ev.Reason = "deny", err.Error()
 			p.audit(ev)
-			return false, errorResponse(m.id, err.(*rpcError))
+			var re *rpcError
+			if !errors.As(err, &re) {
+				re = &rpcError{codeInvalidRequest, err.Error()}
+			}
+			return false, errorResponse(m.id, re)
 		}
 		ev.Forward = true
 		p.audit(ev)
@@ -349,43 +391,80 @@ func safeIDOrNil(id json.RawMessage) json.RawMessage {
 }
 
 func (p *Proxy) register(key string, e pending) error {
+	now := p.cfg.Now()
+	e.since = now
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if _, dup := p.pending[key]; dup {
 		return errInvalid("request id is already in flight; ids must be unique")
 	}
 	if len(p.pending) >= p.cfg.MaxPending {
-		return &rpcError{codeServerBusy, fmt.Sprintf("too many in-flight requests (limit %d)", p.cfg.MaxPending)}
+		// Requests the server never answered would otherwise fill the table
+		// for good. Plain entries carry no labels, so stale ones can go.
+		for k, old := range p.pending {
+			if old.kind == kindPlain && now.Sub(old.since) >= p.cfg.PlainTTL {
+				p.takeLocked(k)
+			}
+		}
+		if len(p.pending) >= p.cfg.MaxPending {
+			return &rpcError{codeServerBusy, fmt.Sprintf("too many in-flight requests (limit %d)", p.cfg.MaxPending)}
+		}
 	}
-	p.pending[key] = e
+	p.putLocked(key, e)
 	return nil
+}
+
+// putLocked and takeLocked are the only places that change p.pending; they
+// keep labelRefs in sync so that pendingUnion is O(1). p.mu must be held.
+func (p *Proxy) putLocked(key string, e pending) {
+	p.pending[key] = e
+	for b := 0; b < 32; b++ {
+		if e.produces&(1<<b) != 0 {
+			p.labelRefs[b]++
+		}
+	}
+}
+
+func (p *Proxy) takeLocked(key string) (pending, bool) {
+	e, ok := p.pending[key]
+	if !ok {
+		return e, false
+	}
+	delete(p.pending, key)
+	for b := 0; b < 32; b++ {
+		if e.produces&(1<<b) != 0 {
+			p.labelRefs[b]--
+		}
+	}
+	return e, true
 }
 
 // cancel handles notifications/cancelled from the client. The server should
 // not answer a cancelled request, so its pending entry is dropped to keep the
 // table bounded. A cancelled tool call may still have produced output (the
 // response can race the cancellation), so its labels are added now —
-// conservatively — before the entry is forgotten.
-func (p *Proxy) cancel(params json.RawMessage) {
+// conservatively — before the entry is forgotten. Ambiguous params are an
+// error: the notification is then dropped, so the server cannot cancel a
+// request the proxy still considers in flight.
+func (p *Proxy) cancel(params json.RawMessage) error {
 	var reqID json.RawMessage
 	if len(params) == 0 || params[0] != '{' {
-		return
+		return nil
 	}
-	if walkObject(params, func(k string, v json.RawMessage) error {
+	if err := walkObject(params, func(k string, v json.RawMessage) error {
 		if k == "requestId" {
 			reqID = v
 		}
 		return nil
-	}, []string{"requestId"}) != nil {
-		return
+	}, []string{"requestId"}); err != nil {
+		return err
 	}
 	key, ok := idKey(reqID)
 	if !ok {
-		return
+		return nil
 	}
 	p.mu.Lock()
-	e, found := p.pending[key]
-	delete(p.pending, key)
+	e, found := p.takeLocked(key)
 	p.mu.Unlock()
 	if found && e.kind == kindTaskList {
 		e.produces = taint.Known // the listing may already be on its way
@@ -393,6 +472,7 @@ func (p *Proxy) cancel(params json.RawMessage) {
 	if found && e.kind != kindPlain {
 		p.taintTool(e)
 	}
+	return nil
 }
 
 // ---- server -> client ----
@@ -478,10 +558,7 @@ func (p *Proxy) observeServerElement(raw []byte) {
 		return
 	}
 	p.mu.Lock()
-	e, found := p.pending[key]
-	if found {
-		delete(p.pending, key)
-	}
+	e, found := p.takeLocked(key)
 	p.mu.Unlock()
 	if !found {
 		p.taint(p.pendingUnion(), "server response with unknown id")
@@ -503,8 +580,10 @@ func (p *Proxy) pendingUnion() taint.Label {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var l taint.Label
-	for _, e := range p.pending {
-		l |= e.produces
+	for b, n := range p.labelRefs {
+		if n > 0 {
+			l |= 1 << b
+		}
 	}
 	return l
 }

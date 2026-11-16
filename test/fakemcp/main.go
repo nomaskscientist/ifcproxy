@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,6 +155,14 @@ func handle(raw []byte) any {
 }
 
 func main() {
+	if os.Getenv("FAKEMCP_SLEEPER") == "1" {
+		// Orphan simulation: hold the inherited stdout/stderr open for a while.
+		time.Sleep(60 * time.Second)
+		return
+	}
+	if os.Getenv("FAKEMCP_ORPHAN") == "1" {
+		startSleeper()
+	}
 	br := bufio.NewReaderSize(os.Stdin, 1<<20)
 	for {
 		line, err := br.ReadBytes('\n')
@@ -188,4 +197,23 @@ func main() {
 	}
 	code, _ := strconv.Atoi(os.Getenv("FAKEMCP_EXIT_CODE"))
 	os.Exit(code)
+}
+
+// startSleeper launches a copy of this binary that inherits stdout and
+// stderr and outlives a normal shutdown, like the real server behind a
+// wrapper launcher (npx, uvx) does. Its PID goes to FAKEMCP_ORPHAN_PIDFILE.
+func startSleeper() {
+	c := exec.Command(os.Args[0])
+	c.Env = append(os.Environ(), "FAKEMCP_SLEEPER=1", "FAKEMCP_ORPHAN=0")
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if err := c.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "fakemcp: sleeper:", err)
+		os.Exit(3)
+	}
+	if path := os.Getenv("FAKEMCP_ORPHAN_PIDFILE"); path != "" {
+		if err := os.WriteFile(path, []byte(strconv.Itoa(c.Process.Pid)), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, "fakemcp: pidfile:", err)
+			os.Exit(3)
+		}
+	}
 }

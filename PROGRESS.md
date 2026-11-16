@@ -44,3 +44,16 @@
 - Found and documented: tools are identified by name only, so use one policy per server; added `examples/servers/*.yaml`.
 - Measured overhead on real round trips: about 60 µs per call.
 - Not done: a live LLM agent (no LLM client installed on this machine); instructions in REAL_SERVERS.md.
+
+## Code review fixes: done
+All 9 review findings fixed, each with a regression test:
+1. Obfuscated `tasks/*` / `notifications/cancelled` methods: one canonicalisation for all security-relevant methods.
+2. `tasks/*` with invalid ids: rejected like `tools/call`; `tasks/*` notifications dropped (found by the new `FuzzTasksDifferential`).
+3. Hang behind wrapper launchers: server in its own process group, tree kill (`kill(-pgid)` / `taskkill /T`), 2 s backstop exit. Mutation-checked: without the tree kill the test fails.
+4. Case-variant camelCase keys (`RequestId`, `TaskId`) now rejected; ambiguous cancels are dropped.
+5. Plain pending entries older than 5 min are evicted when the table is full (tool entries never are).
+6. Server stderr no longer interleaves with stderr audit records (`LineWriter`).
+7. Pending-label union is O(1) (per-bit reference counts).
+8. No unchecked type assertion on register errors.
+9. Tasks differential fuzz added (60 s+, 5M execs).
+Checks: vet clean; tests green on Windows; `-race` green on Linux.

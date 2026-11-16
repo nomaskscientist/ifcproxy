@@ -21,6 +21,7 @@
 Allowed `tools/call` messages and all other messages are forwarded **byte-for-byte**; nothing is re-serialized except a batch with denied elements removed. *Trade-off:* strictness may reject sloppy but harmless clients; in return the parser-differential fuzz target holds.
 
 **Correlation.**
+- `tools/call`, `tasks/*` and `notifications/cancelled` must be spelled exactly; any variant that a lenient server could dispatch as one of them (case, whitespace, zero-width characters) is refused. `tasks/*` need valid ids and unambiguous params, like `tools/call`, and are dropped when sent as notifications.
 - Every client request id is tracked. Ids are normalised (`1` ≡ `1.0`) and must be unique while in flight, so a reused id can't make one request's response pass for another's.
 - A tool result adds `produces` labels **before** its bytes reach the client.
 - **Conservative attribution:** a server notification or request while tool calls are pending, a response with an unknown id, and an unparseable or oversized server message all inherit the union of labels of the pending tool calls. Oversized server messages are streamed through rather than buffered.
@@ -44,8 +45,10 @@ Allowed `tools/call` messages and all other messages are forwarded **byte-for-by
 
 **Shared sessions.** One proxy per server means a cross-server trifecta would go unseen. `--session-file` is an append-only file of 9-byte records; every proxy merges new records before each decision and appends after its labels grow. Order doesn't matter because labels only grow. A corrupt or shrunken file fails closed (all labels set).
 
-**Audit.** JSONL, one `Write` per record. Arguments only with `--log-args`. A failing sink never blocks enforcement; losses are reported at exit.
+**Audit.** JSONL, one `Write` per record. When the log goes to stderr, the server's stderr is passed through in whole lines under the same lock. Arguments only with `--log-args`. A failing sink never blocks enforcement; losses are reported at exit.
 
 **Environment notes.**
 - MCP spec 2025-06-18 (transports, tools) was checked on the web: newline-delimited stdio messages with no embedded newlines; tool errors go in `isError` results.
 - `-race` needs cgo. On this Windows host without gcc it ran under WSL/Linux; CI runs it on Linux and macOS.
+
+**Process lifecycle.** The server starts in its own process group (Unix) and is killed as a tree (`kill(-pgid)`; `taskkill /T` on Windows), because launchers such as npx and uvx start the real server as a child. If the server's output is still open 2 s after a kill (orphans out of reach), the proxy exits anyway rather than hang the client.

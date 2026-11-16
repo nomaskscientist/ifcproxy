@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 
 	"ifcproxy/internal/taint"
 )
@@ -41,40 +42,48 @@ func (p *Proxy) taskLabels(taskID string) taint.Label {
 	return taint.Known
 }
 
-// taskRequest classifies a client request on a tasks/* method and returns the
-// pending entry for it. ok is false for methods that are not task methods.
-func (p *Proxy) taskRequest(method string, params json.RawMessage) (pending, bool) {
+// isTaskMethod reports whether method is one of the tasks/* requests.
+func isTaskMethod(method string) bool {
 	switch method {
-	case "tasks/result", "tasks/get", "tasks/cancel":
-		id, ok := taskIDParam(params)
-		l := taint.Known
-		if ok {
-			l = p.taskLabels(id)
-		}
-		return pending{kind: kindToolCall, name: method, produces: l}, true
-	case "tasks/list":
-		return pending{kind: kindTaskList, name: method}, true
-	default:
-		return pending{}, false
+	case "tasks/result", "tasks/get", "tasks/cancel", "tasks/list":
+		return true
 	}
+	return false
 }
 
-func taskIDParam(params json.RawMessage) (string, bool) {
-	if len(params) == 0 || params[0] != '{' {
-		return "", false
+// taskRequest returns the pending entry for a client request on a tasks/*
+// method. Ambiguous params (duplicate or case-variant "taskId", a non-string
+// taskId) are rejected: a lenient server could read a different task than
+// the proxy. A missing taskId fails closed (every label).
+func (p *Proxy) taskRequest(method string, params json.RawMessage) (pending, error) {
+	if method == "tasks/list" {
+		return pending{kind: kindTaskList, name: method}, nil
 	}
-	var id string
-	found := false
-	err := walkObject(params, func(k string, v json.RawMessage) error {
-		if k == "taskId" {
-			if json.Unmarshal(v, &id) != nil {
-				return errInvalid("taskId must be a string")
+	l := taint.Known
+	if len(params) > 0 && params[0] == '{' {
+		var id string
+		found := false
+		err := walkObject(params, func(k string, v json.RawMessage) error {
+			if k == "taskId" {
+				if len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &id) != nil {
+					return &rpcError{codeInvalidParams, "taskId must be a string"}
+				}
+				found = true
 			}
-			found = true
+			return nil
+		}, []string{"taskId"})
+		if err != nil {
+			var re *rpcError
+			if errors.As(err, &re) && re.code == codeInvalidRequest {
+				re.code = codeInvalidParams
+			}
+			return pending{}, err
 		}
-		return nil
-	}, []string{"taskId"})
-	return id, err == nil && found
+		if found {
+			l = p.taskLabels(id)
+		}
+	}
+	return pending{kind: kindToolCall, name: method, produces: l}, nil
 }
 
 // recordTask remembers the taskId from a CreateTaskResult. A response that

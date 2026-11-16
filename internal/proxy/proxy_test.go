@@ -57,6 +57,7 @@ type harness struct {
 	toServer chan string
 	done     chan error
 	serverIn *io.PipeReader
+	px       *Proxy
 }
 
 func newHarness(t *testing.T, mut func(*Config)) *harness {
@@ -81,6 +82,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.px = px
 	clientInR, clientInW := io.Pipe()
 	clientOutR, clientOutW := io.Pipe()
 	serverInR, serverInW := io.Pipe()
@@ -739,6 +741,127 @@ func TestTaskAugmentedSinkStillDecided(t *testing.T) {
 	r := decode(t, h.expectClient())
 	if r.Result == nil || !r.Result.IsError {
 		t.Fatalf("got %+v", r)
+	}
+	h.syncServer(1)
+}
+
+// ---- review fixes ----
+
+func TestObfuscatedSecurityMethodsRefused(t *testing.T) {
+	h := newHarness(t, nil)
+	for i, m := range []string{"Tasks/Result", " tasks/result", "tasks/\xe2\x80\x8bresult", "TASKS/GET", "tasks/Cancel", "Tasks/List"} {
+		h.client(`{"jsonrpc":"2.0","id":` + itoa(i) + `,"method":"` + m + `","params":{"taskId":"other-session"}}` + "\n")
+		r := decode(t, h.expectClient())
+		if r.Error == nil || r.Error.Code != codeInvalidRequest || !strings.Contains(r.Error.Message, "non-canonical method") {
+			t.Fatalf("%q: %+v", m, r)
+		}
+	}
+	// Obfuscated notification: dropped without a reply.
+	h.client(`{"jsonrpc":"2.0","method":"Notifications/Cancelled","params":{"requestId":1}}` + "\n")
+	h.syncServer(1)
+}
+
+func TestTaskMethodsRequireValidIDs(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, id := range []string{"true", "null", `{"a":1}`, "[1]"} {
+		h.client(`{"jsonrpc":"2.0","id":` + id + `,"method":"tasks/result","params":{"taskId":"x"}}` + "\n")
+		r := decode(t, h.expectClient())
+		if r.Error == nil || !strings.Contains(r.Error.Message, "id must be") {
+			t.Fatalf("id %s: %+v", id, r)
+		}
+	}
+	h.syncServer(1)
+}
+
+func TestTaskParamsAmbiguityRejected(t *testing.T) {
+	h := newHarness(t, nil)
+	for i, params := range []string{
+		`{"TaskId":"x"}`,
+		`{"taskId":"clean","taskid":"dirty"}`,
+		`{"taskId":"x","taskId":"y"}`,
+		`{"taskId":7}`,
+	} {
+		h.client(`{"jsonrpc":"2.0","id":` + itoa(i) + `,"method":"tasks/result","params":` + params + `}` + "\n")
+		r := decode(t, h.expectClient())
+		if r.Error == nil || r.Error.Code != codeInvalidParams {
+			t.Fatalf("%s: %+v", params, r)
+		}
+	}
+	h.syncServer(1)
+}
+
+func TestAmbiguousCancelDropped(t *testing.T) {
+	h := newHarness(t, nil)
+	h.client(call("1", "read_file", `{}`))
+	h.expectServer()
+	h.client(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"RequestId":1}}` + "\n")
+	h.syncServer(1) // the ambiguous cancel was not forwarded
+	h.server(result("1", "secret"))
+	h.expectClient()
+	if h.sess.Labels() != taint.Private {
+		t.Fatalf("labels %v", h.sess.Labels())
+	}
+}
+
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *fakeClock) Now() time.Time          { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *fakeClock) Advance(d time.Duration) { c.mu.Lock(); c.now = c.now.Add(d); c.mu.Unlock() }
+
+func TestStalePlainEntriesEvictedWhenFull(t *testing.T) {
+	clk := &fakeClock{now: time.Unix(1000, 0)}
+	h := newHarness(t, func(c *Config) { c.MaxPending = 2; c.PlainTTL = time.Minute; c.Now = clk.Now })
+	for i := 1; i <= 2; i++ {
+		h.client(`{"jsonrpc":"2.0","id":` + itoa(i) + `,"method":"completion/complete"}` + "\n")
+		h.expectServer()
+	}
+	h.client(`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n")
+	if r := decode(t, h.expectClient()); r.Error == nil || !strings.Contains(r.Error.Message, "too many") {
+		t.Fatalf("full table accepted: %+v", r)
+	}
+	clk.Advance(2 * time.Minute)
+	h.client(`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n")
+	h.expectServer()
+}
+
+func TestToolEntriesNeverEvicted(t *testing.T) {
+	clk := &fakeClock{now: time.Unix(1000, 0)}
+	h := newHarness(t, func(c *Config) { c.MaxPending = 1; c.PlainTTL = time.Minute; c.Now = clk.Now })
+	h.client(call("1", "read_file", `{}`))
+	h.expectServer()
+	clk.Advance(time.Hour)
+	h.client(`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n")
+	if r := decode(t, h.expectClient()); r.Error == nil {
+		t.Fatalf("tool entry evicted: %+v", r)
+	}
+	// A server message now still inherits the pending tool's labels.
+	h.server(`{"jsonrpc":"2.0","method":"notifications/message","params":{"data":"x"}}` + "\n")
+	h.expectClient()
+	if h.sess.Labels() != taint.Private {
+		t.Fatalf("labels %v", h.sess.Labels())
+	}
+}
+
+func TestLabelRefsBalanced(t *testing.T) {
+	h := newHarness(t, nil)
+	h.runTool("1", "fetch_url")
+	h.client(call("2", "read_file", `{}`))
+	h.expectServer()
+	h.client(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":2}}` + "\n")
+	h.expectServer()
+	h.syncServer(1)
+	if u := h.px.pendingUnion(); u != taint.None {
+		t.Fatalf("union after all calls finished: %v", u)
+	}
+}
+
+func TestTaskNotificationsDropped(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, m := range []string{"tasks/list", "tasks/result", "tasks/get", "tasks/cancel"} {
+		h.client(`{"jsonrpc":"2.0","method":"` + m + `","params":{"taskId":"x"}}` + "\n")
 	}
 	h.syncServer(1)
 }

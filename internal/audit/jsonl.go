@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -64,4 +65,53 @@ func (j *JSONL) Close() error {
 		return nil
 	}
 	return j.closer.Close()
+}
+
+// maxLine bounds how much of an unterminated line LineWriter buffers before
+// writing it out anyway.
+const maxLine = 64 << 10
+
+// LineWriter returns a writer for another stream that shares j's destination
+// (the server's stderr when the audit log goes to stderr). It buffers input
+// until a newline and writes whole lines under j's lock, so foreign output
+// never splits an audit record. Close flushes an unterminated last line.
+// The returned writer is meant for a single producer (exec's copy goroutine).
+func (j *JSONL) LineWriter() io.WriteCloser { return &lineWriter{j: j} }
+
+type lineWriter struct {
+	j   *JSONL
+	buf []byte
+}
+
+func (l *lineWriter) Write(p []byte) (int, error) {
+	l.buf = append(l.buf, p...)
+	if i := bytes.LastIndexByte(l.buf, '\n'); i >= 0 {
+		if err := l.flush(l.buf[:i+1]); err != nil {
+			return 0, err
+		}
+		l.buf = append(l.buf[:0], l.buf[i+1:]...)
+	}
+	if len(l.buf) > maxLine {
+		if err := l.flush(l.buf); err != nil {
+			return 0, err
+		}
+		l.buf = l.buf[:0]
+	}
+	return len(p), nil
+}
+
+func (l *lineWriter) flush(b []byte) error {
+	l.j.mu.Lock()
+	defer l.j.mu.Unlock()
+	_, err := l.j.w.Write(b)
+	return err
+}
+
+func (l *lineWriter) Close() error {
+	if len(l.buf) == 0 {
+		return nil
+	}
+	err := l.flush(append(l.buf, '\n'))
+	l.buf = nil
+	return err
 }

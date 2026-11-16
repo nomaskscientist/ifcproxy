@@ -34,6 +34,9 @@ Also covered end to end:
 
 Real servers (see [REAL_SERVERS.md](REAL_SERVERS.md)): a cross-server trifecta with server-filesystem and mcp-server-fetch, driven by the official Inspector CLI, is denied. The injection page's server log shows the exfiltration URL was never requested.
 
+- After the code review: obfuscated `tasks/*` and `notifications/cancelled` methods are refused; `tasks/*` with invalid ids, ambiguous `taskId` or sent as notifications are rejected (`TestObfuscatedSecurityMethodsRefused`, `TestTaskMethodsRequireValidIDs`, `TestTaskParamsAmbiguityRejected`, `TestTaskNotificationsDropped`). `FuzzTasksDifferential` checks that every message a lenient server reads as `tasks/*` has a labelled pending entry; it found the notification case.
+- A server that ignores EOF and leaves a descendant holding stdout: the proxy kills the tree and exits (`TestOrphanedGrandchildDoesNotHangProxy`).
+
 Unit level (`internal/proxy`):
 - **MCP Tasks:**
   - a task-augmented call taints at `CreateTaskResult`;
