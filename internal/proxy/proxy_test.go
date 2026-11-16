@@ -278,7 +278,7 @@ func TestTrifectaDenied(t *testing.T) {
 
 func TestUnknownAndObfuscatedToolNames(t *testing.T) {
 	h := newHarness(t, nil)
-	for i, name := range []string{"rm_rf", "Send_Email", "send_email ", `send​email`, `SEND_EMAIL`} {
+	for i, name := range []string{"rm_rf", "Send_Email", "send_email ", "send\xe2\x80\x8bemail", `SEND_EMAIL`} {
 		h.client(call(itoa(10+i), name, `{}`))
 		r := decode(t, h.expectClient())
 		if r.Result == nil || !r.Result.IsError || !strings.Contains(r.Result.Content[0].Text, "not declared") {
@@ -304,7 +304,7 @@ func TestProtocolRejections(t *testing.T) {
 		{"case-variant name param", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","NAME":"send_email"}}` + "\n", codeInvalidParams},
 		{"obfuscated method case", `{"jsonrpc":"2.0","id":1,"method":"Tools/Call","params":{"name":"send_email"}}` + "\n", codeInvalidRequest},
 		{"obfuscated method space", `{"jsonrpc":"2.0","id":1,"method":" tools/call","params":{"name":"send_email"}}` + "\n", codeInvalidRequest},
-		{"obfuscated method zwsp", `{"jsonrpc":"2.0","id":1,"method":"tools/​call","params":{"name":"send_email"}}` + "\n", codeInvalidRequest},
+		{"obfuscated method zwsp", `{"jsonrpc":"2.0","id":1,"method":"tools/` + "\xe2\x80\x8b" + `call","params":{"name":"send_email"}}` + "\n", codeInvalidRequest},
 		{"non-string method", `{"jsonrpc":"2.0","id":1,"method":["tools/call"]}` + "\n", codeInvalidRequest},
 		{"wrong jsonrpc version", `{"jsonrpc":"1.0","id":1,"method":"tools/call","params":{"name":"echo"}}` + "\n", codeInvalidRequest},
 		{"params not object", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":["echo"]}` + "\n", codeInvalidParams},

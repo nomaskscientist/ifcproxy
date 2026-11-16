@@ -1,0 +1,35 @@
+# Example ifcproxy policy (also used by the end-to-end tests).
+#
+# produces: labels a tool's *result* adds to the session.
+#   untrusted - content a third party could have written (prompt-injection source)
+#   private   - data that must not leave
+# sink: external - the tool can move data out (network, e-mail, posting, ...)
+#
+# Rules: first match wins; "when" = all listed labels are present in the session.
+# Undeclared tools are always denied.
+version: 1
+max_args_bytes: 65536
+
+tools:
+  fetch_url:   {produces: [untrusted], sink: external}   # GET with a query string is an exfiltration channel too
+  slow_fetch:  {produces: [untrusted], sink: external}
+  big_result:  {produces: [untrusted]}
+  read_file:   {produces: [private]}
+  send_email:  {sink: external}
+  echo:        {}
+  delete_file: {}
+
+rules:
+  - tool: sink:external
+    when: [untrusted, private]
+    action: deny
+    reason: "lethal trifecta: the session holds untrusted content and private data"
+
+  - tool: send_email
+    when: [private]
+    action: ask
+    reason: private data may leave by e-mail
+
+  - tool: delete_file
+    action: ask
+    reason: destructive operation

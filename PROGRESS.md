@@ -21,5 +21,12 @@
 - CLI: `--ask-mode`, `--ask-timeout`, `--audit` (`-`/path/`off`), `--log-args`, `--dry-run` (decides and logs, forwards everything, warns on stderr).
 - Checks: vet clean, `go test -race ./...` green (WSL).
 
+## M4 — end-to-end attack tests: done
+- `test/fakemcp`: deliberately lenient MCP server (case-insensitive keys, last duplicate wins, normalised names) with an execution log.
+- `test/e2e`: 12 attack scenarios (A1–A12) + 8 mode/lifecycle tests through the real binary; bypass attacks include a control run against the bare server proving the attack works without the proxy. Catalogue: `docs/ATTACKS.md`.
+- `docs/LIMITATIONS.md`: 17 things v1 does not stop.
+- Bug found and fixed by the e2e tests: the "hung server" fixture used `select {}`, which the Go runtime aborts as a deadlock; now it sleeps.
+- Checks: vet clean; `go test ./...` green on Windows; `go test -race ./...` green on Linux (WSL).
+
 ## Next
-- M4: fake MCP server + end-to-end attack scenarios through the real binary; docs/LIMITATIONS.md.
+- M5: README, Makefile, GitHub Actions, docs/BENCH.md.
