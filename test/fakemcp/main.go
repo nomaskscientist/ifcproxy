@@ -117,6 +117,9 @@ func handle(raw []byte) any {
 		}}
 	case "ping":
 		return map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}}
+	case "test/noreply":
+		return nil // a request the server never answers: stays in flight
+
 	case "tools/list":
 		return map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"tools": tools}}
 	case "tools/call":

@@ -509,21 +509,17 @@ func TestA10InjectionViaNotification(t *testing.T) {
 	mustDeny(t, p.call(3, "send_email", `{}`), "lethal trifecta")
 }
 
-// A11: id reuse. A tools/list is pending with id 7; a call reusing id 7
-// (as 7.0) would let the tools/list response be mistaken for the result.
+// A11: id reuse. A request with id 7 is still in flight; a call reusing id 7
+// (as 7.0) would let that request's response be mistaken for the result.
+// The first request is one the server never answers, so it is still pending
+// when the call arrives (a quickly answered request made this test racy).
 func TestA11InFlightIDReuse(t *testing.T) {
-	p := start(t, opts{env: []string{}})
-	p.send(`{"jsonrpc":"2.0","id":7,"method":"tools/list"}`)
+	p := start(t, opts{})
+	p.send(`{"jsonrpc":"2.0","id":7,"method":"test/noreply"}`)
 	p.send(`{"jsonrpc":"2.0","id":7.0,"method":"tools/call","params":{"name":"read_file","arguments":{}}}`)
-	var gotErr bool
-	for i := 0; i < 2; i++ {
-		r := p.recvResp()
-		if r.Error != nil && strings.Contains(r.Error.Message, "already in flight") {
-			gotErr = true
-		}
-	}
-	if !gotErr {
-		t.Fatal("duplicate in-flight id accepted")
+	r := p.recvResp()
+	if r.Error == nil || !strings.Contains(r.Error.Message, "already in flight") {
+		t.Fatalf("duplicate in-flight id accepted: %+v", r)
 	}
 	if got := p.executed(); contains(got, "read_file") {
 		t.Fatalf("executed: %v", got)

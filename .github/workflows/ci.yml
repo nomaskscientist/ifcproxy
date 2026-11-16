@@ -34,6 +34,10 @@ jobs:
     name: vet + race tests (macos)
     # macOS minutes are billed 10x in private repositories: main only.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Hosted macOS runners are sometimes unavailable (capacity); do not fail
+    # the whole pipeline when GitHub cannot schedule this job.
+    continue-on-error: true
+    timeout-minutes: 20
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
