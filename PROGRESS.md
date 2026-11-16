@@ -57,3 +57,8 @@ All 9 review findings fixed, each with a regression test:
 8. No unchecked type assertion on register errors.
 9. Tasks differential fuzz added (60 s+, 5M execs).
 Checks: vet clean; tests green on Windows; `-race` green on Linux.
+
+## Release preparation: done
+- License: Apache-2.0 (canonical text + NOTICE). Module path: `github.com/nomaskscientist/ifcproxy`.
+- Private repository https://github.com/nomaskscientist/ifcproxy; first CI run found a racy e2e test (fixed) and a GitHub macOS capacity outage (job made non-blocking); second run fully green: Linux go1.22/stable with -race, macOS with -race, Windows, fuzz, benchmark smoke.
+- Live-agent demo: `examples/agent-demo/setup.ps1` + README; generated `.mcp.json` verified with a scripted client (scenario B denied, exfiltration URL never requested). Not yet run with a real LLM agent.
