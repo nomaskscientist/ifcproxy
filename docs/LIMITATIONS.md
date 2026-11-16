@@ -26,7 +26,7 @@ This is a list of attacks v1 does not stop, by design or by construction. Treat 
 ## Deployment gaps
 
 7. **Separate proxies don't share labels by default.** With one proxy per server, a trifecta spread across servers (web server → filesystem server → mail server) is **not detected** unless every proxy gets the same `--session-file` (test A12 shows both cases). The shared file is never reset automatically.
-8. **stdio only.** The Streamable HTTP transport is not supported.
+8. **stdio only.** ifcproxy does not speak the Streamable HTTP transport itself. Remote servers work through a stdio bridge such as `mcp-remote` (`ifcproxy ... -- npx -y mcp-remote https://…/mcp`, tested with DeepWiki, see [REAL_SERVERS](REAL_SERVERS.md#remote-servers-through-mcp-remote)). With a bridge, OAuth and HTTP are the bridge's job, and ifcproxy sees only JSON-RPC. A client configured with the server's URL directly bypasses the proxy.
 9. **The client is trusted.** Anything that can start the MCP server without the proxy bypasses it. ifcproxy is not a sandbox and does not confine the server process.
 
 ## Implementation limits

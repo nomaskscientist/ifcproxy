@@ -1,0 +1,21 @@
+# ifcproxy policy for the DeepWiki remote MCP server (https://mcp.deepwiki.com/mcp),
+# reached through mcp-remote:
+#
+#   ifcproxy --policy deepwiki.yaml --session-file <shared> -- npx -y mcp-remote https://mcp.deepwiki.com/mcp
+#
+# Any remote server is both a source and a sink:
+# - its results are third-party text (here: generated from public repositories) -> untrusted;
+# - every argument leaves the machine (a repository name, a free-text question) -> sink: external.
+version: 1
+max_args_bytes: 8192
+
+tools:
+  read_wiki_structure: {produces: [untrusted], sink: external}
+  read_wiki_contents:  {produces: [untrusted], sink: external}
+  ask_wiki_question:   {produces: [untrusted], sink: external}   # free text goes to the server
+
+rules:
+  - tool: sink:external
+    when: [untrusted, private]
+    action: deny
+    reason: "lethal trifecta: the session holds untrusted content and private data"

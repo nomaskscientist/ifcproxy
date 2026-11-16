@@ -50,18 +50,33 @@ Overhead is about 60 µs per call, from two extra pipe hops plus parsing.
    **Fixed:** the proxy now records `taskId → labels`. Task responses for unknown tasks carry every label (fail closed). `tasks/list` gets the union of the listed tasks' labels, or every label if any listed task is unknown. `task`/`TASK` smuggling is rejected. Tests: `TestTask*` in `internal/proxy`.
 2. **Tools are identified by name only.** One policy shared by several servers would let a server inherit another server's rules by naming a tool `fetch`. **Mitigation:** one policy file per server (`examples/servers/`); documented in LIMITATIONS.
 
-## Not done here: a live LLM agent
+## Live LLM agent
 
-No LLM client is installed on the test machine. To try it with Claude Code, put this in the project's `.mcp.json` (adjust paths), restart, and ask the agent to summarise the page:
+`examples/agent-demo` wires the filesystem and fetch servers into Claude Code through two proxies sharing one session file, with a fake secret and a local page carrying a hidden injection. Run on 2026-11-16 with a live Claude Code agent:
 
-```json
-{
-  "mcpServers": {
-    "fs": {"command": "ifcproxy", "args": ["--policy", "examples/servers/filesystem.yaml", "--session-file", "/tmp/ifc-session", "--audit", "/tmp/ifc-fs.jsonl", "--ask-mode", "deny", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/sandbox"]},
-    "fetch": {"command": "ifcproxy", "args": ["--policy", "examples/servers/fetch.yaml", "--session-file", "/tmp/ifc-session", "--audit", "/tmp/ifc-fetch.jsonl", "--ask-mode", "deny", "--", "uvx", "mcp-server-fetch", "--allow-private-ips"]}
-  }
-}
+- **Injection page, normal request.** The agent read `notes.md` through `files` and fetched the page through `web`. Every call went through the proxies, and the session gained `private`, then `untrusted`. The model ignored the hidden instruction on its own, so nothing needed blocking.
+- **Explicit exfiltration request.** Claude's own safeguards refused it before any tool call. The proxy logs show nothing.
+- **Deterministic block.** In a fresh agent session sharing the tainted session file, a plain "fetch this page" was denied by ifcproxy: `lethal trifecta`, `forwarded: false`. The web server received no request.
+
+## Remote servers through mcp-remote
+
+ifcproxy speaks stdio only. A remote (Streamable HTTP) server can still be guarded by wrapping a stdio bridge. The bridge handles HTTP, SSE and OAuth; ifcproxy sees plain JSON-RPC:
+
+```bash
+ifcproxy --policy examples/servers/deepwiki.yaml --session-file /tmp/s -- npx -y mcp-remote https://mcp.deepwiki.com/mcp
 ```
+
+Tested on 2026-11-17 on Windows with `mcp-remote` 0.16.6 and the public DeepWiki server (no authentication), using a scripted client:
+
+| Check | Result |
+|---|---|
+| `initialize`, `tools/list` through the proxy | pass: DeepWiki 4.0.2, 3 tools |
+| clean session: `read_wiki_structure`, then `ask_wiki_question` | both allowed, results labelled `untrusted` |
+| session file already holding `private` (as if another proxied server read a secret): `read_wiki_structure`, then `ask_wiki_question` with a password in the question | first allowed; the second denied (`lethal trifecta`, rule line 18). The `mcp-remote` log shows only one `tools/call` sent upstream |
+| `npx -y mcp-remote@0.16.6 …` form | works; no `node` process left after the client disconnects |
+
+- **Every argument to a remote server leaves the machine.** Remote tools should be `sink: external` even when they only "read" (see [`examples/servers/deepwiki.yaml`](../examples/servers/deepwiki.yaml)).
+- **Not tested: OAuth.** `mcp-remote` handles the browser flow and keeps tokens in its own cache. ifcproxy never sees them.
 
 ## Reproducing
 

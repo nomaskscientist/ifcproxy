@@ -71,3 +71,7 @@ Checks: vet clean; tests green on Windows; `-race` green on Linux.
 ## README demo + v0.1.1 fix: done
 - `examples/trifecta-demo`: scripted agent against a real ifcproxy + fakemcp; labels from the audit log, decisions from the real responses, server log proves `send_email` never ran. `scripts/render_demo_gif.py` turns its output into `docs/demo.gif` (`make demo-gif`).
 - Found while building it: the deny `_meta` key had become `github.com/nomaskscientist/ifcproxy/decision` in the module rename (shipped in v0.1.0). Restored to `ifcproxy/decision`; `TestTrifectaDenied` now pins it (fails without the fix).
+
+## Remote servers via mcp-remote: verified
+- `ifcproxy -- npx -y mcp-remote https://mcp.deepwiki.com/mcp` works (Windows, mcp-remote 0.16.6): init, tools/list, allowed calls, cross-server trifecta deny with a pre-tainted session file (only the allowed `tools/call` reached upstream), clean shutdown with no leftover node processes. OAuth not tested.
+- `examples/servers/deepwiki.yaml`; README, LIMITATIONS and REAL_SERVERS updated (REAL_SERVERS also gets the live-agent results).

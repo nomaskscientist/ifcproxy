@@ -70,7 +70,7 @@ Wrap the server command in any client that uses the usual `mcpServers` JSON (Cla
 }
 ```
 
-- **Give every server its own policy file.** Tools are matched by name only. Starting points for the official servers (filesystem, fetch, memory, everything) are in [`examples/servers/`](examples/servers/).
+- **Give every server its own policy file.** Tools are matched by name only. Starting points for the official servers (filesystem, fetch, memory, everything) and a remote one (DeepWiki) are in [`examples/servers/`](examples/servers/).
 - **Wrap every server with the same `--session-file`.** Otherwise each proxy has its own session, and a trifecta spread across servers goes undetected. Delete the file to start a new session.
 - **GUI clients have no terminal for confirmations.** Use `--ask-mode deny` (or `allow`) explicitly with them. The default `tty` asks on the controlling terminal and denies when there is none.
 
@@ -137,7 +137,7 @@ Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) before relying on this. The shor
 - **It cannot see the model.** Taint is per session, not per value. Expect over-blocking once both labels are present; there is no declassification.
 - **Harm that needs no sink is not stopped** (deleting files, for example) unless you write per-tool rules for it.
 - **Cross-server trifectas need `--session-file`.** Without it, each proxy guards only its own server.
-- **stdio only.** No Streamable HTTP. The client is trusted: anything that starts the server without the proxy bypasses it.
+- **stdio only.** ifcproxy does not speak Streamable HTTP itself. Remote servers work through a stdio bridge: `ifcproxy --policy p.yaml -- npx -y mcp-remote https://example.com/mcp` (tested with DeepWiki; details in [REAL_SERVERS](docs/REAL_SERVERS.md#remote-servers-through-mcp-remote)). The client is trusted: anything that starts the server without the proxy bypasses it.
 
 ## Development
 
