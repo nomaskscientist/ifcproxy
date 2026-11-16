@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"ifcproxy/internal/ask"
-	"ifcproxy/internal/audit"
-	"ifcproxy/internal/monitor"
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/ask"
+	"github.com/nomaskscientist/ifcproxy/internal/audit"
+	"github.com/nomaskscientist/ifcproxy/internal/monitor"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 const proxyPolicy = `

@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"ifcproxy/internal/monitor"
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/monitor"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // BenchmarkClientToolsCall measures the full per-message cost on the client

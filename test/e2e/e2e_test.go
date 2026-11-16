@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 	binDir = dir
 	proxyBin = filepath.Join(dir, exe("ifcproxy"))
 	fakeBin = filepath.Join(dir, exe("fakemcp"))
-	for pkg, out := range map[string]string{"ifcproxy/cmd/ifcproxy": proxyBin, "ifcproxy/test/fakemcp": fakeBin} {
+	for pkg, out := range map[string]string{"github.com/nomaskscientist/ifcproxy/cmd/ifcproxy": proxyBin, "github.com/nomaskscientist/ifcproxy/test/fakemcp": fakeBin} {
 		cmd := exec.Command("go", "build", "-o", out, pkg)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 		if err := cmd.Run(); err != nil {

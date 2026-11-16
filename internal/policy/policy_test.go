@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 const validPolicy = `version: 1

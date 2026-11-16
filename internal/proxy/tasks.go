@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // MCP Tasks (spec 2025-11-25, experimental): a task-augmented tools/call is

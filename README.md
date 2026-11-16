@@ -20,6 +20,12 @@ Labels only ever accumulate within a session. Once a session has seen untrusted 
 Requires Go 1.22+. The only dependency is `gopkg.in/yaml.v3`.
 
 ```bash
+go install github.com/nomaskscientist/ifcproxy/cmd/ifcproxy@latest
+```
+
+or, from a checkout:
+
+```bash
 go build -o bin/ifcproxy ./cmd/ifcproxy
 ```
 
@@ -137,3 +143,7 @@ make vet test race bench fuzz
 - **Real servers and client:** [docs/REAL_SERVERS.md](docs/REAL_SERVERS.md). Tested with official servers (filesystem, fetch, memory, everything) and the official Inspector client, including MCP Tasks. Measured overhead: about 60 µs per call.
 - **Benchmarks:** [docs/BENCH.md](docs/BENCH.md). `Decide`: about 15–30 ns/op, 0 allocations, p99 about 50 ns.
 - **Design notes:** [docs/DESIGN.md](docs/DESIGN.md).
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

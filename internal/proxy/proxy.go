@@ -15,11 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ifcproxy/internal/ask"
-	"ifcproxy/internal/audit"
-	"ifcproxy/internal/monitor"
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/ask"
+	"github.com/nomaskscientist/ifcproxy/internal/audit"
+	"github.com/nomaskscientist/ifcproxy/internal/monitor"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // Defaults for Config.
@@ -366,7 +366,7 @@ func (p *Proxy) denyResponse(id json.RawMessage, tool string, d monitor.Decision
 		Result: deniedResult{
 			Content: []textContent{{Type: "text", Text: text}},
 			IsError: true,
-			Meta: map[string]denyMeta{"ifcproxy/decision": {
+			Meta: map[string]denyMeta{"github.com/nomaskscientist/ifcproxy/decision": {
 				Action: ev.Decision, Code: d.Code.String(), Rule: ev.Rule, Labels: d.Labels.Names(),
 			}},
 		},

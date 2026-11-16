@@ -31,7 +31,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // Action is the outcome of a rule. The zero value is Deny so that an

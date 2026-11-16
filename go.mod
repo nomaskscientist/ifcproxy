@@ -1,4 +1,4 @@
-module ifcproxy
+module github.com/nomaskscientist/ifcproxy
 
 go 1.22
 

@@ -15,9 +15,6 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         go: ["1.22.x", "stable"]
-        include:
-          - os: macos-latest
-            go: stable
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +29,19 @@ jobs:
         run: go test -race -count=1 ./...
       - name: policy check
         run: go run ./cmd/ifcproxy --policy examples/policy.yaml --check
+
+  macos:
+    name: vet + race tests (macos)
+    # macOS minutes are billed 10x in private repositories: main only.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
 
   windows:
     name: tests (windows, no race)

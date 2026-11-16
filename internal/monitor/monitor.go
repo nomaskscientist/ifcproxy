@@ -3,8 +3,8 @@
 package monitor
 
 import (
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // Code says why a decision was made.

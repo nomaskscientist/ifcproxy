@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 type syncBuf struct {

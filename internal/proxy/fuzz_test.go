@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"ifcproxy/internal/monitor"
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/monitor"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // lenientMsg models a permissive server: Go struct decoding matches keys

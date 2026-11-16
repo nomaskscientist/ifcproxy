@@ -4,7 +4,7 @@ package ask
 import (
 	"context"
 
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 // Request describes a call awaiting confirmation.

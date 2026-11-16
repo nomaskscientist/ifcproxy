@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"ifcproxy/internal/policy"
-	"ifcproxy/internal/taint"
+	"github.com/nomaskscientist/ifcproxy/internal/policy"
+	"github.com/nomaskscientist/ifcproxy/internal/taint"
 )
 
 const testPolicy = `
