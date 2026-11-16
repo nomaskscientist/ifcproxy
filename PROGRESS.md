@@ -81,3 +81,6 @@ Checks: vet clean; tests green on Windows; `-race` green on Linux.
 - Tests: 12 unit tests (mutation-checked: compaction, error synthesis, redirects), 5 e2e tests incl. cross-transport trifecta; `-race` clean under WSL.
 - Live: DeepWiki and official server-everything (streamableHttp) — calls, labels, denies, session DELETE.
 - Not done: OAuth (use mcp-remote), legacy HTTP+SSE, resumability.
+
+## CI: macOS moved out of the main workflow
+- A main run went red only because GitHub never assigned a macOS runner (job cancelled after 15 min, no runner). `continue-on-error` does not help with cancelled jobs. macOS tests now live in `.github/workflows/macos.yml` (weekly, on `v*` tags, manual dispatch); `ci.yml` uses only Linux and Windows runners.

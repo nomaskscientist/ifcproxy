@@ -49,7 +49,7 @@ Allowed `tools/call` messages and all other messages are forwarded **byte-for-by
 
 **Environment notes.**
 - MCP spec 2025-06-18 (transports, tools) was checked on the web: newline-delimited stdio messages with no embedded newlines; tool errors go in `isError` results.
-- `-race` needs cgo. On this Windows host without gcc it ran under WSL/Linux; CI runs it on Linux and macOS.
+- `-race` needs cgo. On this Windows host without gcc it ran under WSL/Linux; CI runs it on Linux on every push, and on macOS weekly and on release tags (`macos.yml`).
 
 **Process lifecycle.** The server starts in its own process group (Unix) and is killed as a tree (`kill(-pgid)`; `taskkill /T` on Windows), because launchers such as npx and uvx start the real server as a child. If the server's output is still open 2 s after a kill (orphans out of reach), the proxy exits anyway rather than hang the client.
 

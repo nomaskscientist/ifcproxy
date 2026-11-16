@@ -34,22 +34,8 @@ jobs:
           go run ./examples/trifecta-demo | tee demo.out
           grep -q "send_email never reached the server" demo.out
 
-  macos:
-    name: vet + race tests (macos)
-    # macOS minutes are billed 10x in private repositories: main only.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # Hosted macOS runners are sometimes unavailable (capacity); do not fail
-    # the whole pipeline when GitHub cannot schedule this job.
-    continue-on-error: true
-    timeout-minutes: 20
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - run: go vet ./...
-      - run: go test -race -count=1 ./...
+  # macOS runs in macos.yml: hosted macOS runners are sometimes not
+  # available, and a job that never gets one would turn this workflow red.
 
   windows:
     name: tests (windows, no race)
